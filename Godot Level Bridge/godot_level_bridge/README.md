@@ -10,6 +10,8 @@ Estado: **fases B0–B2** — geometría estática (con colores de vértice), pl
 2. Blender → Edit → Preferences → Get Extensions → menú ⌄ → **Install from Disk** → el ZIP.
 3. En las preferencias del addon, **Proyecto Godot**: la carpeta que contiene `project.godot`.
 
+**Actualizar a una versión nueva:** primero desinstalar la anterior (Get Extensions → la extensión → ⌄ → **Uninstall**) y después instalar el ZIP nuevo. Instalar encima puede dejar en uso el código anterior aunque el panel muestre la versión nueva. Para comprobar con qué versión se exportó: en Godot, las mallas de un GLB de 0.2.2 o posterior se llaman `<nivel>_<malla>`, no `gbridge_staging_<malla>`.
+
 ## Uso
 
 1. Guarda el `.blend` en `levels/<área>/<sala>/source/<sala>.blend` dentro del proyecto Godot.
