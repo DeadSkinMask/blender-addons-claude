@@ -24,7 +24,7 @@ Estado: **fases B0–B2** — geometría estática (con colores de vértice), pl
 5. **Mostrar qué se exporta** selecciona todo lo que entra; **Validar** revisa sin exportar; **Exportar nivel** escribe el manifiesto y el GLB.
 6. En Godot: selecciona el `LevelBuilder` de la sala → **Rebuild** → **guarda la escena** (Ctrl+S). Los colisores, marcadores y placeholders viven en la escena; la geometría visual en el GLB, que Godot reimporta solo. Si no guardas, el juego usa los colisores anteriores (el builder avisa en la consola).
 
-**Duplicados:** objetos con la misma geometría final comparten la malla también en Godot: Alt+D (aunque tengan modificadores, si dan el mismo resultado) e incluso copias independientes idénticas. Las columnas de la sala de ejemplo no comparten porque cada una tiene un degradado de colores de vértice distinto. Esto ahorra memoria pero sigue siendo un `MeshInstance3D` por objeto: para cientos de copias, Geometry Nodes → MultiMesh (fase 3); para un asset con colisiones o luces que se edita una vez, colecciones instanciadas (fase 4).
+**Duplicados:** objetos con la misma geometría final comparten la malla también en Godot: Alt+D (aunque tengan modificadores, si dan el mismo resultado) e incluso copias independientes idénticas. Las columnas de la sala de ejemplo son mallas independientes pero idénticas (misma forma y mismo degradado), así que también comparten al exportar con 0.2.2. Esto ahorra memoria pero sigue siendo un `MeshInstance3D` por objeto: para cientos de copias, Geometry Nodes → MultiMesh (fase 3); para un asset con colisiones o luces que se edita una vez, colecciones instanciadas (fase 4).
 
 El export no modifica la malla ni los colores del `.blend` (trabaja sobre copias). Solo asigna el uid de las entidades nuevas.
 
