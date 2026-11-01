@@ -3,6 +3,10 @@
 Each exported object gets a temporary copy in an auxiliary scene: its evaluated
 mesh (or base mesh), color attributes converted to Face Corner + Byte Color so
 Godot reads them as COLOR_0. The glTF exporter only sees that scene.
+
+Objects that share mesh data (linked duplicates, Alt+D) and whose result does
+not depend on the object (no viewport modifiers, or "don't apply") share one
+copy: the GLB stores the mesh once and Godot gives every node the same Mesh.
 """
 
 import os
@@ -38,6 +42,15 @@ def _mesh_copy(obj, depsgraph, policy):
         obj.evaluated_get(depsgraph), preserve_all_data_layers=True, depsgraph=depsgraph)
 
 
+def _share_key(obj, policy):
+    """Key for objects that can reuse one staging mesh, or None."""
+    if obj.type != 'MESH':
+        return None
+    if policy == 'BASE' or not any(m.show_viewport for m in obj.modifiers):
+        return obj.data
+    return None
+
+
 def normalize_colors(mesh):
     """Convert every color attribute to CORNER + BYTE_COLOR, keeping the active one."""
     active = mesh.color_attributes.active_color
@@ -71,13 +84,20 @@ def export(context, objects, path):
     depsgraph = context.evaluated_depsgraph_get()
     staging = bpy.data.scenes.new(STAGING_SCENE)
     copies, meshes, renamed = [], [], []
+    shared = {}
     try:
         for obj in objects:
             if obj.type not in ('MESH', 'CURVE', 'SURFACE', 'FONT', 'META'):
                 continue
-            mesh = _mesh_copy(obj, depsgraph, _policy(obj, scene))
-            meshes.append(mesh)
-            normalize_colors(mesh)
+            policy = _policy(obj, scene)
+            key = _share_key(obj, policy)
+            mesh = shared.get(key) if key is not None else None
+            if mesh is None:
+                mesh = _mesh_copy(obj, depsgraph, policy)
+                meshes.append(mesh)
+                normalize_colors(mesh)
+                if key is not None:
+                    shared[key] = mesh
             # The copy must carry the original name into the GLB: rename the
             # original for the duration of the export (restored in finally).
             original_name = obj.name

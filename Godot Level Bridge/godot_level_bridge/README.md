@@ -22,7 +22,9 @@ Estado: **fases B0–B2** — geometría estática (con colores de vértice), pl
    - **Path**: una curva; Bézier con manijas, poly y NURBS por sus puntos.
    - Para copiar ajustes a varios objetos: selecciónalos, clic derecho sobre el campo del activo → **Copy to Selected**.
 5. **Mostrar qué se exporta** selecciona todo lo que entra; **Validar** revisa sin exportar; **Exportar nivel** escribe el manifiesto y el GLB.
-6. En Godot: selecciona el `LevelBuilder` de la sala → **Rebuild** → guarda la escena.
+6. En Godot: selecciona el `LevelBuilder` de la sala → **Rebuild** → **guarda la escena** (Ctrl+S). Los colisores, marcadores y placeholders viven en la escena; la geometría visual en el GLB, que Godot reimporta solo. Si no guardas, el juego usa los colisores anteriores (el builder avisa en la consola).
+
+**Duplicados:** Alt+D (duplicado enlazado) comparte la malla también en Godot, si el objeto no tiene modificadores visibles. Las columnas de la sala de ejemplo se crearon como mallas independientes: para que compartan, selecciónalas con la columna buena como activa → Ctrl+L → **Link Object Data**.
 
 El export no modifica la malla ni los colores del `.blend` (trabaja sobre copias). Solo asigna el uid de las entidades nuevas.
 
@@ -37,7 +39,7 @@ Avisos: escala no uniforme o negativa en geometría estática; escala ≠ 1 en u
 B0 (verificado en 0.1.1):
 - [x] Pestaña "Godot Level", rutas `res://` bajo las carpetas, persistencia de la ruta del proyecto, mensaje al exportar.
 
-B1–B2 (0.2.0):
+B1–B2 (0.2.0–0.2.1):
 - [ ] Panel Objeto: los campos cambian según el rol y la línea "Se exporta como" es correcta.
 - [ ] Capa/Máscara muestran los nombres de capa del `project.godot`.
 - [ ] Panel Validación: lista los problemas y el botón de cada uno selecciona el objeto.
@@ -45,3 +47,5 @@ B1–B2 (0.2.0):
 - [ ] Abrir `levels/catedral/catedral_01/source/catedral_01.blend`, exportar sin cambios: "Nivel sin cambios".
 - [ ] Mover un colisor, exportar, Rebuild en Godot: el cambio aparece.
 - [ ] Colores de vértice visibles en Godot (suelo de la catedral en damero, columnas con degradado).
+- [ ] Tras Rebuild la pestaña de la escena queda marcada como modificada (asterisco).
+- [ ] Duplicados con Alt+D: en Godot sus `MeshInstance3D` muestran el mismo recurso Mesh.

@@ -108,3 +108,5 @@ En Godot las props se asignan **antes** de que el nodo entre al árbol: su `_rea
 - Colores de vértice convertidos a Face Corner + Byte Color y exportados como `COLOR_0` (el atributo activo).
 - En Godot, la extensión `LevelBridgeVertexColors` del plugin activa `vertex_color_use_as_albedo` en los materiales de las superficies con colores (o les crea uno) al importar los GLB del puente (`*_static.glb`, `bridge_assets/`).
 - Nodos con el nombre del objeto original; transforms de mundo (sin jerarquía).
+- Duplicados enlazados (Alt+D: objetos con la misma malla) sin modificadores visibles, o con "No aplicar", comparten una sola malla en el GLB; en Godot todos sus `MeshInstance3D` usan el mismo `Mesh`. Para instancias de escena (assets con colisiones, luces, scripts) están las colecciones instanciadas *(fase 4)*; para repetir cientos de copias, Geometry Nodes → MultiMesh *(fase 3)*.
+- En Godot, `Generated/` se guarda dentro de la escena de la sala: tras Rebuild hay que guardarla. El builder guarda el MD5 del manifiesto (`built_manifest_hash`) y avisa al cargar si el manifiesto cambió desde entonces.

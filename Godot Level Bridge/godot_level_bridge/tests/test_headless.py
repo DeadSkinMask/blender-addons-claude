@@ -260,6 +260,12 @@ def t_build_sample_level():
         d.color = (1.0, 0.25 * (i % 4), 0.0, 1.0)
     floor.data.color_attributes.active_color = colors
 
+    # Linked duplicates (Alt+D): one mesh shared by two objects.
+    pillar_a = _cube("PilarA", geo, location=(-4, 2, 1))
+    pillar_b = bpy.data.objects.new("PilarB", pillar_a.data)
+    pillar_b.location = (4, 2, 1)
+    geo.objects.link(pillar_b)
+
     cols = _collection("Colisiones", root, 'COLLIDER')
     _fixed_uid(_cube("FloorCol", cols, location=(0, 0, -0.25), scale=(5, 1, 0.25)), "c0000001")
     pillar = _cube("PillarCol", cols, location=(3, 0, 1), scale=(0.5, 0.5, 1),
@@ -319,7 +325,7 @@ def t_build_sample_level():
     entries = mod.scope.collect(scene, bpy.context.view_layer)
     roles = {o.name: r for o, r in entries}
     assert roles == {
-        "Floor": 'STATIC', "FloorCol": 'COLLIDER', "OneWayCol": 'COLLIDER', "PillarCol": 'COLLIDER',
+        "Floor": 'STATIC', "PilarA": 'STATIC', "PilarB": 'STATIC', "FloorCol": 'COLLIDER', "OneWayCol": 'COLLIDER', "PillarCol": 'COLLIDER',
         "Receiver": 'PLACEHOLDER', "Spawn": 'MARKER', "Trigger": 'AREA', "Rail": 'PATH',
     }, roles
 
@@ -338,9 +344,13 @@ def t_export_sample_level():
 def t_static_glb():
     path = os.path.join(os.path.dirname(MANIFEST), "room_a_static.glb")
     gltf = glb_json(path)
-    assert [n["name"] for n in gltf["nodes"]] == ["Floor"], gltf["nodes"]
-    attributes = gltf["meshes"][0]["primitives"][0]["attributes"]
+    nodes = {n["name"]: n for n in gltf["nodes"]}
+    assert sorted(nodes) == ["Floor", "PilarA", "PilarB"], list(nodes)
+    attributes = gltf["meshes"][nodes["Floor"]["mesh"]]["primitives"][0]["attributes"]
     assert "COLOR_0" in attributes, attributes
+    # Linked duplicates share one glTF mesh.
+    assert nodes["PilarA"]["mesh"] == nodes["PilarB"]["mesh"], nodes
+    assert len(gltf["meshes"]) == 2, len(gltf["meshes"])
 
 
 def t_blend_untouched():
