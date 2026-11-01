@@ -8,4 +8,4 @@ Addons de Blender 5.2, un proyecto por carpeta (independientes entre sí).
 | `Godot MultiMesh Scatter/` | Addon + loader de Godot para exportar instancias de Geometry Nodes como MultiMesh. |
 | `Sculpt Brush Shelf/` | Extensión con una lista corta y configurable de pinceles de Sculpt en el sidebar. |
 
-Los ZIP instalables se generan con el `build_zip.sh` de cada proyecto (no se versionan). Guía para agentes: `CLAUDE.md`.
+Cada proyecto incluye su ZIP instalable, generado con su `build_zip.sh`. Guía para agentes: `CLAUDE.md`.

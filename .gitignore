@@ -1,7 +1,5 @@
 __pycache__/
 *.pyc
 test_log.txt
-# Builds: se generan con build_zip.sh
-*.zip
 # Capturas de pantalla de pruebas manuales
 Screenshot_*.png

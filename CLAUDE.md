@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Layout
 
-Git repo `blender-addons-claude` (remote `origin` on GitHub, branch `master`): a folder of independent Blender 5.2 addon projects, one subfolder each. Built ZIPs, `test_log.txt` and screenshots are gitignored. Keep projects self-contained; don't share code between them. Code and comments in English, user-facing UI strings in Spanish (Sculpt Brush Shelf, Godot Level Bridge) — match the project you are in.
+Git repo `blender-addons-claude` (remote `origin` on GitHub, branch `master`): a folder of independent Blender 5.2 addon projects, one subfolder each. Built ZIPs are committed (the repo is for addons in general and the user installs from them); `test_log.txt` and screenshots are gitignored. Keep projects self-contained; don't share code between them. Code and comments in English, user-facing UI strings in Spanish (Sculpt Brush Shelf, Godot Level Bridge) — match the project you are in.
 
 Blender 5.2.3 is installed at `/opt/blender-5.2.3-linux-x64/blender` (also `blender` on PATH). Target API is Blender 5.2 only; verify API names by running Blender (`blender -b --factory-startup --python-expr ...`), not from older docs.
 
