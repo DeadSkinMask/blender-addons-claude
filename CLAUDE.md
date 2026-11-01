@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Layout
 
-Not a git repo: a folder of independent Blender 5.2 addon projects, one subfolder each. Keep projects self-contained; don't share code between them. Code and comments in English, user-facing UI strings in Spanish (Sculpt Brush Shelf, Godot Level Bridge) — match the project you are in.
+Git repo `blender-addons-claude` (remote `origin` on GitHub, branch `master`): a folder of independent Blender 5.2 addon projects, one subfolder each. Built ZIPs, `test_log.txt` and screenshots are gitignored. Keep projects self-contained; don't share code between them. Code and comments in English, user-facing UI strings in Spanish (Sculpt Brush Shelf, Godot Level Bridge) — match the project you are in.
 
 Blender 5.2.3 is installed at `/opt/blender-5.2.3-linux-x64/blender` (also `blender` on PATH). Target API is Blender 5.2 only; verify API names by running Blender (`blender -b --factory-startup --python-expr ...`), not from older docs.
 
@@ -61,6 +61,7 @@ blender --command extension validate godot_level_bridge
 - Same test mechanics as Sculpt Brush Shelf (ZIP installed into a temp `BLENDER_USER_CONFIG`; module `bl_ext.user_default.godot_level_bridge`; `check(...)` list at the bottom of `tests/test_headless.py`). The test's second argument is a temp work dir where it fakes a Godot project.
 - Fixtures shared with the game: `t_matches_godot_empty_fixture` and `t_sample_fixture_for_godot` compare Blender's output with `elegia/tests/fixtures/` (path via `GODOT_FIXTURES`). After changing the format run `UPDATE_FIXTURES=1 ./run_tests.sh …` to rewrite `fixtures/sample/` (manifest + GLB), then run the Godot tests. The sample level uses fixed uids so the output is deterministic.
 - New files must be added to the `zip` command in `build_zip.sh`; bump the version there and in `blender_manifest.toml` (tagline max 64 chars).
+- Releasing a version: also copy the built ZIP to `/home/luis/GIT/personal/Godot/elegia/tools/blender/` (replacing the old one), since the user installs it from the game repo on another PC.
 - Operators that `report({'ERROR'})` raise `RuntimeError` when called from Python; tests assert on that.
 - The exporter must never modify the user's `.blend` data: static geometry goes through copies in a temporary scene (`static_export.py`), the original object is renamed only during the glTF export so the copy keeps its name (restored in `finally`), and the window scene is restored because the glTF exporter switches it. Only `gbridge.uid`/`uid_owner` are written. Files are written only when their content changes.
 - Call `view_layer.update()` before reading `matrix_world` (validation does): transforms edited from Python are stale until then.
