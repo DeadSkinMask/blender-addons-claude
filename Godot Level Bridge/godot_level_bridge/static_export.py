@@ -9,6 +9,10 @@ mesh once and Godot gives every node the same Mesh: linked duplicates (Alt+D)
 without viewport modifiers reuse it directly; anything else is compared by a
 hash of its evaluated geometry (so linked duplicates with modifiers, or separate
 objects with the same geometry, are shared too).
+
+Vertex colors per object (or scene default): DATA exports them untouched for
+shaders, ALBEDO also marks the mesh (glTF mesh extras "gbridge_vertex_colors")
+so Godot's LevelBridgeVertexColors makes its material use them, NONE drops them.
 """
 
 import array
@@ -21,6 +25,7 @@ import bpy
 from . import manifest
 
 STAGING_SCENE = "gbridge_staging"
+VERTEX_COLORS_EXTRA = "gbridge_vertex_colors"
 # foreach_get field, components and array typecode per attribute data type.
 _ATTRIBUTE_FIELDS = {
     'FLOAT': ("value", 1, 'f'), 'INT': ("value", 1, 'i'), 'INT8': ("value", 1, 'b'),
@@ -37,7 +42,7 @@ GLTF_OPTIONS = dict(
     export_cameras=False,
     export_lights=False,
     export_animations=False,
-    export_extras=False,
+    export_extras=True,  # carries the vertex color mode to Godot (mesh extras)
 )
 
 
@@ -53,18 +58,24 @@ def _mesh_copy(obj, depsgraph, policy):
         obj.evaluated_get(depsgraph), preserve_all_data_layers=True, depsgraph=depsgraph)
 
 
-def _share_key(obj, policy):
+def _vertex_color_mode(obj, scene):
+    value = obj.gbridge.vertex_colors
+    return scene.gbridge.vertex_colors if value == 'SCENE' else value
+
+
+def _share_key(obj, policy, color_mode):
     """Key for objects that can reuse one staging mesh, or None."""
     if obj.type != 'MESH':
         return None
     if policy == 'BASE' or not any(m.show_viewport for m in obj.modifiers):
-        return obj.data
+        return (obj.data, color_mode)
     return None
 
 
 def geometry_signature(mesh, obj):
     """Hash of everything the GLB stores for this mesh on this object, or None if unknown data."""
     h = hashlib.sha1()
+    h.update(str(mesh.get(VERTEX_COLORS_EXTRA, "")).encode())
 
     def add(collection, field, components, typecode):
         values = array.array(typecode, [0]) * (len(collection) * components)
@@ -132,11 +143,17 @@ def export(context, objects, path, level_name=STAGING_SCENE):
             if obj.type not in ('MESH', 'CURVE', 'SURFACE', 'FONT', 'META'):
                 continue
             policy = _policy(obj, scene)
-            key = _share_key(obj, policy)
+            color_mode = _vertex_color_mode(obj, scene)
+            key = _share_key(obj, policy, color_mode)
             mesh = shared.get(key) if key is not None else None
             if mesh is None:
                 mesh = _mesh_copy(obj, depsgraph, policy)
+                if color_mode == 'NONE':
+                    for attr in list(mesh.color_attributes):
+                        mesh.color_attributes.remove(attr)
                 normalize_colors(mesh)
+                if mesh.color_attributes:
+                    mesh[VERTEX_COLORS_EXTRA] = color_mode.lower()
                 signature = geometry_signature(mesh, obj)
                 if signature is not None and signature in by_signature:
                     bpy.data.meshes.remove(mesh)

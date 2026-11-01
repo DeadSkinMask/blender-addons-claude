@@ -33,6 +33,12 @@ INSTANCE_POLICIES = [
 ]
 
 
+VERTEX_COLOR_MODES = [
+    ('DATA', "Datos", "Se exportan (COLOR_0) y el material de Godot no los usa: para máscaras y shaders"),
+    ('ALBEDO', "Albedo", "El material de Godot multiplica el albedo por el color de vértice"),
+    ('NONE', "No exportar", "Se quitan los colores de vértice de la copia exportada"),
+]
+
 SHAPES = [
     ('BOX', "Caja", "BoxShape3D ajustada a la caja local del objeto"),
     ('SPHERE', "Esfera", "SphereShape3D; radio = mitad de la mayor dimensión"),
@@ -67,6 +73,7 @@ class GBRIDGE_SceneProps(bpy.types.PropertyGroup):
         description="Vacío = nombre del archivo .blend")
     modifiers: EnumProperty(name="Modificadores", items=MODIFIER_POLICIES, default='APPLY')
     instances: EnumProperty(name="Instancias", items=INSTANCE_POLICIES, default='MULTIMESH')
+    vertex_colors: EnumProperty(name="Colores de vértice", items=VERTEX_COLOR_MODES, default='DATA')
 
 
 class GBRIDGE_CollectionProps(bpy.types.PropertyGroup):
@@ -84,6 +91,8 @@ class GBRIDGE_ObjectProps(bpy.types.PropertyGroup):
                               description="Nombre del objeto cuando se asignó el uid, para detectar duplicados")
     modifiers: EnumProperty(name="Modificadores", items=_with_scene_default(MODIFIER_POLICIES), default='SCENE')
     instances: EnumProperty(name="Instancias", items=_with_scene_default(INSTANCE_POLICIES), default='SCENE')
+    vertex_colors: EnumProperty(name="Colores de vértice", items=_with_scene_default(VERTEX_COLOR_MODES),
+                                default='SCENE')
 
     # Placeholder / área basada en escena
     scene: StringProperty(name="Escena", default="",

@@ -127,6 +127,8 @@ def t_coords():
     from mathutils import Matrix
     c = mod.coords
     assert c.vec((1, 2, 3)) == [1.0, 3.0, -2.0]
+    assert bpy.context.scene.gbridge.vertex_colors == 'DATA'
+    assert bpy.context.object.gbridge.vertex_colors == 'SCENE'
     assert c.size((1, 2, 3)) == [1.0, 3.0, 2.0]
     m = Matrix.Translation((1, 2, 3))
     assert c.matrix(m) == [1, 0, 0, 0, 1, 0, 0, 0, 1, 1.0, 3.0, -2.0]
@@ -259,6 +261,16 @@ def t_build_sample_level():
     for i, d in enumerate(colors.data):
         d.color = (1.0, 0.25 * (i % 4), 0.0, 1.0)
     floor.data.color_attributes.active_color = colors
+    floor.gbridge.vertex_colors = 'ALBEDO'
+    stone = bpy.data.materials.new("Piedra")
+    floor.data.materials.append(stone)
+    # Same material, colors used as data (default): Godot must not touch its material.
+    mask = _cube("Mascara", geo, location=(0, 4, 1))
+    mask.data.color_attributes.new("Mask", 'BYTE_COLOR', 'CORNER')
+    mask.data.materials.append(stone)
+    no_colors = _cube("SinColores", geo, location=(2, 4, 1))
+    no_colors.data.color_attributes.new("Col", 'BYTE_COLOR', 'CORNER')
+    no_colors.gbridge.vertex_colors = 'NONE'
 
     # Linked duplicates (Alt+D): one mesh shared by two objects.
     pillar_a = _cube("PilarA", geo, location=(-4, 2, 1))
@@ -339,7 +351,8 @@ def t_build_sample_level():
     roles = {o.name: r for o, r in entries}
     assert roles == {
         "Floor": 'STATIC', "PilarA": 'STATIC', "PilarB": 'STATIC', "FloorCol": 'COLLIDER',
-        "FarolaA": 'STATIC', "FarolaB": 'STATIC', "FarolaC": 'STATIC', "OneWayCol": 'COLLIDER', "PillarCol": 'COLLIDER',
+        "FarolaA": 'STATIC', "FarolaB": 'STATIC', "FarolaC": 'STATIC',
+        "Mascara": 'STATIC', "SinColores": 'STATIC', "OneWayCol": 'COLLIDER', "PillarCol": 'COLLIDER',
         "Receiver": 'PLACEHOLDER', "Spawn": 'MARKER', "Trigger": 'AREA', "Rail": 'PATH',
     }, roles
 
@@ -359,14 +372,25 @@ def t_static_glb():
     path = os.path.join(os.path.dirname(MANIFEST), "room_a_static.glb")
     gltf = glb_json(path)
     nodes = {n["name"]: n for n in gltf["nodes"]}
-    assert sorted(nodes) == ["FarolaA", "FarolaB", "FarolaC", "Floor", "PilarA", "PilarB"], list(nodes)
-    attributes = gltf["meshes"][nodes["Floor"]["mesh"]]["primitives"][0]["attributes"]
-    assert "COLOR_0" in attributes, attributes
+    assert sorted(nodes) == ["FarolaA", "FarolaB", "FarolaC", "Floor", "Mascara", "PilarA", "PilarB",
+                             "SinColores"], list(nodes)
+
+    def mesh_of(name):
+        return gltf["meshes"][nodes[name]["mesh"]]
+
+    assert "COLOR_0" in mesh_of("Floor")["primitives"][0]["attributes"]
+    assert mesh_of("Floor").get("extras") == {"gbridge_vertex_colors": "albedo"}, mesh_of("Floor")
+    assert "COLOR_0" in mesh_of("Mascara")["primitives"][0]["attributes"]
+    assert mesh_of("Mascara").get("extras") == {"gbridge_vertex_colors": "data"}, mesh_of("Mascara")
+    assert "COLOR_0" not in mesh_of("SinColores")["primitives"][0]["attributes"]
+    assert "extras" not in mesh_of("SinColores")
     # Linked duplicates share one glTF mesh.
     assert nodes["PilarA"]["mesh"] == nodes["PilarB"]["mesh"], nodes
     assert nodes["FarolaA"]["mesh"] == nodes["FarolaB"]["mesh"], "linked duplicates with modifiers"
     assert nodes["FarolaC"]["mesh"] != nodes["FarolaA"]["mesh"], "different modifier result"
-    assert len(gltf["meshes"]) == 4, len(gltf["meshes"])
+    # Without its colors, SinColores is the same cube as the pillars: shared too.
+    assert nodes["SinColores"]["mesh"] == nodes["PilarA"]["mesh"]
+    assert len(gltf["meshes"]) == 5, len(gltf["meshes"])
 
 
 def t_blend_untouched():

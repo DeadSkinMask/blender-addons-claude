@@ -429,4 +429,5 @@ Cada fase deja algo usable y amplía el formato de forma compatible (el campo `v
 - Decisiones tomadas al implementar: capas como números en el manifiesto (no nombres); valores por defecto de capa por rol (colisor → `world`, área → detecta `player`); props de marcadores, paths y áreas sin escena como metadata; `Path3D` usa solo el primer spline.
 - **0.2.1:** los duplicados enlazados comparten malla en el GLB y en Godot; Rebuild marca la escena como modificada y el builder avisa si el manifiesto cambió sin Rebuild + guardar (causa de colisores "en la posición antigua" al jugar).
 - **0.2.2:** la malla se comparte por geometría evaluada idéntica (hash), no solo por Alt+D sin modificadores; la escena temporal se llama como el nivel (nombres de malla legibles en Godot); Rebuild reimporta el GLB si está desactualizado.
+- **0.3.0:** modo de colores de vértice por objeto: Datos (por defecto, el material no los usa: máscaras/shaders), Albedo, No exportar; viaja como extra glTF de la malla.
 - **Siguiente:** G3 (combate y primer enemigo) y después B3 (Geometry Nodes → MultiMesh).

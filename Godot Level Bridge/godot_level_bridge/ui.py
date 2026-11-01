@@ -57,6 +57,7 @@ class GBRIDGE_PT_level(bpy.types.Panel):
         col = layout.column(heading="Por defecto")
         col.prop(props, "modifiers")
         col.prop(props, "instances")
+        col.prop(props, "vertex_colors")
 
         layout.operator("gbridge.show_scope", icon='RESTRICT_SELECT_OFF')
         row = layout.row(align=True)
@@ -111,6 +112,7 @@ class GBRIDGE_PT_object(bpy.types.Panel):
         if role == 'STATIC':
             layout.prop(props, "modifiers")
             layout.prop(props, "instances")
+            layout.prop(props, "vertex_colors")
         if role in ('PLACEHOLDER', 'MARKER', 'AREA', 'PATH'):
             layout.label(text="Props: propiedades personalizadas del objeto", icon='PROPERTIES')
 

@@ -20,6 +20,7 @@ Estado: **fases B0–B2** — geometría estática (con colores de vértice), pl
 4. Ajusta lo propio de cada objeto en el panel **Objeto** (aparece según su rol):
    - **Placeholder** (un empty): `Escena` = `res://….tscn`. Sus props son las propiedades personalizadas del objeto (Object Properties → Custom Properties); una propiedad que apunta a otro objeto exportado llega a Godot como `NodePath`.
    - **Marcador**: props como metadata del `Marker3D` (p. ej. `entry_id = "default"` para el punto de entrada de la sala).
+   - **Geometría estática — Colores de vértice**: **Datos** (por defecto de la escena): se exportan como `COLOR_0` y el material de Godot no los usa, para máscaras o shaders propios. **Albedo**: el material de Godot los multiplica por el albedo (si otras mallas comparten ese material, esta usa una copia `<material>_vertex_color`). **No exportar**: se quitan.
    - **Colisor / Área**: forma (caja, esfera, cápsula, cilindro, convexa, trimesh) ajustada a la caja del objeto con la escala horneada; capa y máscara con los nombres del `project.godot` (sin marcar = por defecto: colisor en `world`, área que detecta `player`); "Grupo de cuerpo" para que varios colisores compartan cuerpo.
    - **Path**: una curva; Bézier con manijas, poly y NURBS por sus puntos.
    - Para copiar ajustes a varios objetos: selecciónalos, clic derecho sobre el campo del activo → **Copy to Selected**.
@@ -41,13 +42,14 @@ Avisos: escala no uniforme o negativa en geometría estática; escala ≠ 1 en u
 B0 (verificado en 0.1.1):
 - [x] Pestaña "Godot Level", rutas `res://` bajo las carpetas, persistencia de la ruta del proyecto, mensaje al exportar.
 
-B1–B2 (0.2.0–0.2.2):
-- [ ] Panel Objeto: los campos cambian según el rol y la línea "Se exporta como" es correcta.
-- [ ] Capa/Máscara muestran los nombres de capa del `project.godot`.
-- [ ] Panel Validación: lista los problemas y el botón de cada uno selecciona el objeto.
-- [ ] "Mostrar qué se exporta" selecciona lo esperado y el mensaje cuenta por rol.
-- [ ] Abrir `levels/catedral/catedral_01/source/catedral_01.blend`, exportar sin cambios: "Nivel sin cambios".
-- [ ] Mover un colisor, exportar, Rebuild en Godot: el cambio aparece.
-- [ ] Colores de vértice visibles en Godot (suelo de la catedral en damero, columnas con degradado).
-- [ ] Tras Rebuild la pestaña de la escena queda marcada como modificada (asterisco).
-- [ ] Duplicados con Alt+D: en Godot sus `MeshInstance3D` muestran el mismo recurso Mesh.
+B1–B2 (0.2.0–0.3.0):
+- [x] Panel Objeto: los campos cambian según el rol y la línea "Se exporta como" es correcta.
+- [x] Capa/Máscara muestran los nombres de capa del `project.godot`.
+- [x] Panel Validación: lista los problemas y el botón de cada uno selecciona el objeto.
+- [x] "Mostrar qué se exporta" selecciona lo esperado y el mensaje cuenta por rol.
+- [x] Abrir `levels/catedral/catedral_01/source/catedral_01.blend`, exportar sin cambios: "Nivel sin cambios".
+- [x] Mover un colisor, exportar, Rebuild en Godot: el cambio aparece.
+- [x] Colores de vértice: llegan a Godot (verificado con la columna en blanco y negro). El damero del suelo de ejemplo no podía verse (caja de 8 vértices) y el degradado original era demasiado sutil. Faltaba poder elegir si el material los usa → modo Datos/Albedo/No exportar (0.3.0).
+- [x] Tras Rebuild la pestaña de la escena queda marcada como modificada (asterisco).
+- [x] Duplicados con Alt+D: en Godot sus `MeshInstance3D` muestran el mismo recurso Mesh.
+- [ ] Modo de colores de vértice (0.3.0): un objeto en "Albedo" se ve con sus colores en Godot (material `<material>_vertex_color`); uno en "Datos" (por defecto) conserva su material sin teñir.
