@@ -4,11 +4,15 @@ Each exported object gets a temporary copy in an auxiliary scene: its evaluated
 mesh (or base mesh), color attributes converted to Face Corner + Byte Color so
 Godot reads them as COLOR_0. The glTF exporter only sees that scene.
 
-Objects that share mesh data (linked duplicates, Alt+D) and whose result does
-not depend on the object (no viewport modifiers, or "don't apply") share one
-copy: the GLB stores the mesh once and Godot gives every node the same Mesh.
+Objects whose final geometry is identical share one copy, so the GLB stores the
+mesh once and Godot gives every node the same Mesh: linked duplicates (Alt+D)
+without viewport modifiers reuse it directly; anything else is compared by a
+hash of its evaluated geometry (so linked duplicates with modifiers, or separate
+objects with the same geometry, are shared too).
 """
 
+import array
+import hashlib
 import os
 import tempfile
 
@@ -17,6 +21,13 @@ import bpy
 from . import manifest
 
 STAGING_SCENE = "gbridge_staging"
+# foreach_get field, components and array typecode per attribute data type.
+_ATTRIBUTE_FIELDS = {
+    'FLOAT': ("value", 1, 'f'), 'INT': ("value", 1, 'i'), 'INT8': ("value", 1, 'b'),
+    'BOOLEAN': ("value", 1, 'b'), 'FLOAT2': ("vector", 2, 'f'), 'INT32_2D': ("value", 2, 'i'),
+    'FLOAT_VECTOR': ("vector", 3, 'f'), 'FLOAT_COLOR': ("color", 4, 'f'),
+    'BYTE_COLOR': ("color", 4, 'f'), 'QUATERNION': ("value", 4, 'f'), 'FLOAT4X4': ("value", 16, 'f'),
+}
 GLTF_OPTIONS = dict(
     export_format='GLB',
     use_active_scene=True,
@@ -51,6 +62,33 @@ def _share_key(obj, policy):
     return None
 
 
+def geometry_signature(mesh, obj):
+    """Hash of everything the GLB stores for this mesh on this object, or None if unknown data."""
+    h = hashlib.sha1()
+
+    def add(collection, field, components, typecode):
+        values = array.array(typecode, [0]) * (len(collection) * components)
+        collection.foreach_get(field, values)
+        h.update(values.tobytes())
+
+    add(mesh.loops, "vertex_index", 1, 'i')
+    add(mesh.polygons, "loop_total", 1, 'i')
+    for attr in sorted(mesh.attributes, key=lambda a: a.name):
+        spec = _ATTRIBUTE_FIELDS.get(attr.data_type)
+        if spec is None:
+            return None
+        h.update("{}|{}|{}".format(attr.name, attr.domain, attr.data_type).encode())
+        try:
+            add(attr.data, *spec)
+        except (TypeError, AttributeError, RuntimeError):
+            return None
+    active = mesh.color_attributes.active_color
+    h.update((active.name if active else "").encode())
+    materials = [slot.material.name if slot.material else "" for slot in obj.material_slots]
+    h.update("|".join(materials).encode())
+    return h.hexdigest()
+
+
 def normalize_colors(mesh):
     """Convert every color attribute to CORNER + BYTE_COLOR, keeping the active one."""
     active = mesh.color_attributes.active_color
@@ -76,15 +114,19 @@ def normalize_colors(mesh):
         mesh.color_attributes.render_color_index = mesh.color_attributes.active_color_index
 
 
-def export(context, objects, path):
-    """Write the GLB for `objects` if its content changed. Returns True if written."""
+def export(context, objects, path, level_name=STAGING_SCENE):
+    """Write the GLB for `objects` if its content changed. Returns True if written.
+
+    The staging scene is named after the level: Godot prefixes imported mesh names with it.
+    """
     scene = context.scene
     window = context.window
     previous_scene = window.scene if window else None
     depsgraph = context.evaluated_depsgraph_get()
-    staging = bpy.data.scenes.new(STAGING_SCENE)
+    staging = bpy.data.scenes.new(level_name)
     copies, meshes, renamed = [], [], []
-    shared = {}
+    shared = {}       # obj.data -> staging mesh (plain linked duplicates)
+    by_signature = {}  # geometry hash -> staging mesh
     try:
         for obj in objects:
             if obj.type not in ('MESH', 'CURVE', 'SURFACE', 'FONT', 'META'):
@@ -94,8 +136,15 @@ def export(context, objects, path):
             mesh = shared.get(key) if key is not None else None
             if mesh is None:
                 mesh = _mesh_copy(obj, depsgraph, policy)
-                meshes.append(mesh)
                 normalize_colors(mesh)
+                signature = geometry_signature(mesh, obj)
+                if signature is not None and signature in by_signature:
+                    bpy.data.meshes.remove(mesh)
+                    mesh = by_signature[signature]
+                else:
+                    meshes.append(mesh)
+                    if signature is not None:
+                        by_signature[signature] = mesh
                 if key is not None:
                     shared[key] = mesh
             # The copy must carry the original name into the GLB: rename the

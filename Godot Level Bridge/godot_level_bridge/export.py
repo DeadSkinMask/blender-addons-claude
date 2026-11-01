@@ -66,7 +66,7 @@ def export_level(context):
     static_path = os.path.join(output_dir, manifest.static_filename(name))
     static_written = False
     if static_objs:
-        static_written = static_export.export(context, static_objs, static_path)
+        static_written = static_export.export(context, static_objs, static_path, name)
         data["static_scene"] = manifest.static_filename(name)
     elif os.path.isfile(static_path):
         os.remove(static_path)  # stale output of a previous export

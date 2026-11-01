@@ -24,7 +24,7 @@ Estado: **fases B0–B2** — geometría estática (con colores de vértice), pl
 5. **Mostrar qué se exporta** selecciona todo lo que entra; **Validar** revisa sin exportar; **Exportar nivel** escribe el manifiesto y el GLB.
 6. En Godot: selecciona el `LevelBuilder` de la sala → **Rebuild** → **guarda la escena** (Ctrl+S). Los colisores, marcadores y placeholders viven en la escena; la geometría visual en el GLB, que Godot reimporta solo. Si no guardas, el juego usa los colisores anteriores (el builder avisa en la consola).
 
-**Duplicados:** Alt+D (duplicado enlazado) comparte la malla también en Godot, si el objeto no tiene modificadores visibles. Las columnas de la sala de ejemplo se crearon como mallas independientes: para que compartan, selecciónalas con la columna buena como activa → Ctrl+L → **Link Object Data**.
+**Duplicados:** objetos con la misma geometría final comparten la malla también en Godot: Alt+D (aunque tengan modificadores, si dan el mismo resultado) e incluso copias independientes idénticas. Las columnas de la sala de ejemplo no comparten porque cada una tiene un degradado de colores de vértice distinto. Esto ahorra memoria pero sigue siendo un `MeshInstance3D` por objeto: para cientos de copias, Geometry Nodes → MultiMesh (fase 3); para un asset con colisiones o luces que se edita una vez, colecciones instanciadas (fase 4).
 
 El export no modifica la malla ni los colores del `.blend` (trabaja sobre copias). Solo asigna el uid de las entidades nuevas.
 
@@ -39,7 +39,7 @@ Avisos: escala no uniforme o negativa en geometría estática; escala ≠ 1 en u
 B0 (verificado en 0.1.1):
 - [x] Pestaña "Godot Level", rutas `res://` bajo las carpetas, persistencia de la ruta del proyecto, mensaje al exportar.
 
-B1–B2 (0.2.0–0.2.1):
+B1–B2 (0.2.0–0.2.2):
 - [ ] Panel Objeto: los campos cambian según el rol y la línea "Se exporta como" es correcta.
 - [ ] Capa/Máscara muestran los nombres de capa del `project.godot`.
 - [ ] Panel Validación: lista los problemas y el botón de cada uno selecciona el objeto.

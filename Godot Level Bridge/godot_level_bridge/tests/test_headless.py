@@ -265,6 +265,19 @@ def t_build_sample_level():
     pillar_b = bpy.data.objects.new("PilarB", pillar_a.data)
     pillar_b.location = (4, 2, 1)
     geo.objects.link(pillar_b)
+    # Linked duplicates with the same modifier: same evaluated geometry, shared too.
+    lamp_a = _cube("FarolaA", geo, location=(-6, 2, 1))
+    lamp_a.modifiers.new("Bevel", 'BEVEL')
+    lamp_b = lamp_a.copy()
+    lamp_b.name = "FarolaB"
+    lamp_b.location = (6, 2, 1)
+    geo.objects.link(lamp_b)
+    # Same mesh but a different modifier result: must not be shared.
+    lamp_c = lamp_a.copy()
+    lamp_c.name = "FarolaC"
+    lamp_c.location = (8, 2, 1)
+    lamp_c.modifiers["Bevel"].width = 0.3
+    geo.objects.link(lamp_c)
 
     cols = _collection("Colisiones", root, 'COLLIDER')
     _fixed_uid(_cube("FloorCol", cols, location=(0, 0, -0.25), scale=(5, 1, 0.25)), "c0000001")
@@ -325,7 +338,8 @@ def t_build_sample_level():
     entries = mod.scope.collect(scene, bpy.context.view_layer)
     roles = {o.name: r for o, r in entries}
     assert roles == {
-        "Floor": 'STATIC', "PilarA": 'STATIC', "PilarB": 'STATIC', "FloorCol": 'COLLIDER', "OneWayCol": 'COLLIDER', "PillarCol": 'COLLIDER',
+        "Floor": 'STATIC', "PilarA": 'STATIC', "PilarB": 'STATIC', "FloorCol": 'COLLIDER',
+        "FarolaA": 'STATIC', "FarolaB": 'STATIC', "FarolaC": 'STATIC', "OneWayCol": 'COLLIDER', "PillarCol": 'COLLIDER',
         "Receiver": 'PLACEHOLDER', "Spawn": 'MARKER', "Trigger": 'AREA', "Rail": 'PATH',
     }, roles
 
@@ -345,19 +359,21 @@ def t_static_glb():
     path = os.path.join(os.path.dirname(MANIFEST), "room_a_static.glb")
     gltf = glb_json(path)
     nodes = {n["name"]: n for n in gltf["nodes"]}
-    assert sorted(nodes) == ["Floor", "PilarA", "PilarB"], list(nodes)
+    assert sorted(nodes) == ["FarolaA", "FarolaB", "FarolaC", "Floor", "PilarA", "PilarB"], list(nodes)
     attributes = gltf["meshes"][nodes["Floor"]["mesh"]]["primitives"][0]["attributes"]
     assert "COLOR_0" in attributes, attributes
     # Linked duplicates share one glTF mesh.
     assert nodes["PilarA"]["mesh"] == nodes["PilarB"]["mesh"], nodes
-    assert len(gltf["meshes"]) == 2, len(gltf["meshes"])
+    assert nodes["FarolaA"]["mesh"] == nodes["FarolaB"]["mesh"], "linked duplicates with modifiers"
+    assert nodes["FarolaC"]["mesh"] != nodes["FarolaA"]["mesh"], "different modifier result"
+    assert len(gltf["meshes"]) == 4, len(gltf["meshes"])
 
 
 def t_blend_untouched():
     floor = bpy.data.objects["Floor"]
     attr = floor.data.color_attributes["Col"]
     assert (attr.domain, attr.data_type) == ('POINT', 'FLOAT_COLOR')
-    assert "gbridge_staging" not in bpy.data.scenes
+    assert [s.name for s in bpy.data.scenes] == ["Scene"], "staging scene left behind"
     assert not [o for o in bpy.data.objects if "gbridge_tmp" in o.name]
     assert bpy.context.scene.name == "Scene" and bpy.context.window.scene.name == "Scene"
     assert "Floor" in bpy.data.objects and "Floor.001" not in bpy.data.objects

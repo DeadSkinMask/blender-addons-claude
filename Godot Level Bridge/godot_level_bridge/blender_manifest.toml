@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "godot_level_bridge"
-version = "0.2.1"
+version = "0.2.2"
 name = "Godot Level Bridge"
 tagline = "Export Blender levels to Godot as entities and instances"
 maintainer = "Luis Flores <luis.flores.zamorano@emeal.nttdata.com>"
