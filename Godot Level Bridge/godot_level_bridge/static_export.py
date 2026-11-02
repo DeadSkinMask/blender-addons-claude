@@ -25,6 +25,7 @@ import bpy
 from . import manifest
 
 STAGING_SCENE = "gbridge_staging"
+GEOMETRY_TYPES = ('MESH', 'CURVE', 'SURFACE', 'FONT', 'META')
 VERTEX_COLORS_EXTRA = "gbridge_vertex_colors"
 # foreach_get field, components and array typecode per attribute data type.
 _ATTRIBUTE_FIELDS = {
@@ -125,10 +126,15 @@ def normalize_colors(mesh):
         mesh.color_attributes.render_color_index = mesh.color_attributes.active_color_index
 
 
-def export(context, objects, path, level_name=STAGING_SCENE):
-    """Write the GLB for `objects` if its content changed. Returns True if written.
+def export(context, objects, path, level_name=STAGING_SCENE, extra=()):
+    """Write the GLB for `objects` if its content changed.
 
-    The staging scene is named after the level: Godot prefixes imported mesh names with it.
+    Returns True if written, False if unchanged, None if there was nothing to
+    export (objects without geometry are skipped). `extra` are additional nodes
+    (name, mesh, world matrix, vertex color mode) whose mesh is a temporary copy
+    owned by the caller (Geometry Nodes instances): it is normalized in place and
+    shared between nodes that pass the same mesh. The staging scene is named
+    after the level: Godot prefixes imported mesh names with it.
     """
     scene = context.scene
     window = context.window
@@ -136,47 +142,78 @@ def export(context, objects, path, level_name=STAGING_SCENE):
     depsgraph = context.evaluated_depsgraph_get()
     staging = bpy.data.scenes.new(level_name)
     copies, meshes, renamed = [], [], []
-    shared = {}       # obj.data -> staging mesh (plain linked duplicates)
+    shared = {}       # (obj.data, color mode) -> staging mesh (plain linked duplicates)
     by_signature = {}  # geometry hash -> staging mesh
+    prepared = set()   # extra meshes already normalized
+
+    def staging_mesh(obj):
+        policy = _policy(obj, scene)
+        color_mode = _vertex_color_mode(obj, scene)
+        key = _share_key(obj, policy, color_mode)
+        mesh = shared.get(key) if key is not None else None
+        if mesh is None:
+            mesh = _mesh_copy(obj, depsgraph, policy)
+            if not mesh.vertices:
+                bpy.data.meshes.remove(mesh)  # e.g. a Geometry Nodes host that only outputs instances
+                return None
+            if color_mode == 'NONE':
+                for attr in list(mesh.color_attributes):
+                    mesh.color_attributes.remove(attr)
+            normalize_colors(mesh)
+            if mesh.color_attributes:
+                mesh[VERTEX_COLORS_EXTRA] = color_mode.lower()
+            signature = geometry_signature(mesh, obj)
+            if signature is not None and signature in by_signature:
+                bpy.data.meshes.remove(mesh)
+                mesh = by_signature[signature]
+            else:
+                meshes.append(mesh)
+                if signature is not None:
+                    by_signature[signature] = mesh
+            if key is not None:
+                shared[key] = mesh
+        return mesh
+
+    def prepare_extra(mesh, color_mode):
+        if mesh in prepared:
+            return
+        prepared.add(mesh)
+        if color_mode == 'NONE':
+            for attr in list(mesh.color_attributes):
+                mesh.color_attributes.remove(attr)
+        normalize_colors(mesh)
+        if mesh.color_attributes:
+            mesh[VERTEX_COLORS_EXTRA] = color_mode.lower()
+
+    def add_copy(name, mesh, matrix, obj=None):
+        copy = bpy.data.objects.new(name, mesh)
+        copy.matrix_world = matrix
+        for i, slot in enumerate(obj.material_slots if obj else ()):
+            if slot.link == 'OBJECT' and i < len(copy.material_slots):
+                copy.material_slots[i].link = 'OBJECT'
+                copy.material_slots[i].material = slot.material
+        staging.collection.objects.link(copy)
+        copies.append(copy)
+
     try:
         for obj in objects:
-            if obj.type not in ('MESH', 'CURVE', 'SURFACE', 'FONT', 'META'):
+            if obj.type not in GEOMETRY_TYPES:
                 continue
-            policy = _policy(obj, scene)
-            color_mode = _vertex_color_mode(obj, scene)
-            key = _share_key(obj, policy, color_mode)
-            mesh = shared.get(key) if key is not None else None
+            mesh = staging_mesh(obj)
             if mesh is None:
-                mesh = _mesh_copy(obj, depsgraph, policy)
-                if color_mode == 'NONE':
-                    for attr in list(mesh.color_attributes):
-                        mesh.color_attributes.remove(attr)
-                normalize_colors(mesh)
-                if mesh.color_attributes:
-                    mesh[VERTEX_COLORS_EXTRA] = color_mode.lower()
-                signature = geometry_signature(mesh, obj)
-                if signature is not None and signature in by_signature:
-                    bpy.data.meshes.remove(mesh)
-                    mesh = by_signature[signature]
-                else:
-                    meshes.append(mesh)
-                    if signature is not None:
-                        by_signature[signature] = mesh
-                if key is not None:
-                    shared[key] = mesh
+                continue
             # The copy must carry the original name into the GLB: rename the
             # original for the duration of the export (restored in finally).
             original_name = obj.name
             obj.name = original_name + ".gbridge_tmp"
             renamed.append((obj, original_name))
-            copy = bpy.data.objects.new(original_name, mesh)
-            copy.matrix_world = obj.matrix_world
-            for i, slot in enumerate(obj.material_slots):
-                if slot.link == 'OBJECT' and i < len(copy.material_slots):
-                    copy.material_slots[i].link = 'OBJECT'
-                    copy.material_slots[i].material = slot.material
-            staging.collection.objects.link(copy)
-            copies.append(copy)
+            add_copy(original_name, mesh, obj.matrix_world, obj)
+        for name, mesh, matrix, color_mode in extra:
+            if mesh.vertices:
+                prepare_extra(mesh, color_mode)
+                add_copy(name, mesh, matrix)
+        if not copies:
+            return None
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = os.path.join(tmp, os.path.basename(path))

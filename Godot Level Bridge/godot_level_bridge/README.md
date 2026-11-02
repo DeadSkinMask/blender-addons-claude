@@ -2,7 +2,7 @@
 
 Exporta niveles de Blender a un proyecto Godot 4.7 como manifiesto + GLB, que el plugin `addons/level_bridge` del juego reconstruye como escena. Formato: `../FORMAT.md`. Diseño y fases: `../ANALISIS_Level_Bridge.md`.
 
-Estado: **fases B0–B2** — geometría estática (con colores de vértice), placeholders de escenas con props, marcadores, colisores primitivos, áreas y paths.
+Estado: **fases B0–B3** — geometría estática (con colores de vértice), placeholders de escenas con props, marcadores, colisores primitivos, áreas, paths e instancias de Geometry Nodes como MultiMesh.
 
 ## Instalación
 
@@ -20,6 +20,7 @@ Estado: **fases B0–B2** — geometría estática (con colores de vértice), pl
 4. Ajusta lo propio de cada objeto en el panel **Objeto** (aparece según su rol):
    - **Placeholder** (un empty): `Escena` = `res://….tscn`. Sus props son las propiedades personalizadas del objeto (Object Properties → Custom Properties); una propiedad que apunta a otro objeto exportado llega a Godot como `NodePath`.
    - **Marcador**: props como metadata del `Marker3D` (p. ej. `entry_id = "default"` para el punto de entrada de la sala).
+   - **Geometría estática — Instancias** (scatters de Geometry Nodes): **MultiMesh** (por defecto): solo las instancias, como MultiMesh por trozos de 20 m (ajustable en el panel Nivel); la geometría propia del objeto (el camino guía, etc.) no se exporta. **Realizar**: cada instancia como un nodo de la geometría estática con la malla compartida, más la geometría del objeto. **Ignorar**: solo la geometría del objeto.
    - **Geometría estática — Colores de vértice**: **Datos** (por defecto de la escena): se exportan como `COLOR_0` y el material de Godot no los usa, para máscaras o shaders propios. **Albedo**: el material de Godot los multiplica por el albedo (si otras mallas comparten ese material, esta usa una copia `<material>_vertex_color`). **No exportar**: se quitan.
    - **Colisor / Área**: forma (caja, esfera, cápsula, cilindro, convexa, trimesh) ajustada a la caja del objeto con la escala horneada; capa y máscara con los nombres del `project.godot` (sin marcar = por defecto: colisor en `world`, área que detecta `player`); "Grupo de cuerpo" para que varios colisores compartan cuerpo.
    - **Path**: una curva; Bézier con manijas, poly y NURBS por sus puntos.
@@ -52,4 +53,5 @@ B1–B2 (0.2.0–0.3.0):
 - [x] Colores de vértice: llegan a Godot (verificado con la columna en blanco y negro). El damero del suelo de ejemplo no podía verse (caja de 8 vértices) y el degradado original era demasiado sutil. Faltaba poder elegir si el material los usa → modo Datos/Albedo/No exportar (0.3.0).
 - [x] Tras Rebuild la pestaña de la escena queda marcada como modificada (asterisco).
 - [x] Duplicados con Alt+D: en Godot sus `MeshInstance3D` muestran el mismo recurso Mesh.
+- [ ] B3 (0.4.0): un scatter de Geometry Nodes aparece en Godot como MultiMesh, sin la geometría guía del objeto; con "Realizar" sale como nodos estáticos.
 - [x] Modo de colores de vértice (0.3.0): un objeto en "Albedo" se ve con sus colores en Godot (material `<material>_vertex_color`); uno en "Datos" (por defecto) conserva su material sin teñir.

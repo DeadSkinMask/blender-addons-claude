@@ -58,6 +58,7 @@ class GBRIDGE_PT_level(bpy.types.Panel):
         col.prop(props, "modifiers")
         col.prop(props, "instances")
         col.prop(props, "vertex_colors")
+        col.prop(props, "multimesh_chunk")
 
         layout.operator("gbridge.show_scope", icon='RESTRICT_SELECT_OFF')
         row = layout.row(align=True)

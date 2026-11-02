@@ -2,7 +2,7 @@
 
 Contrato entre el addon de Blender (`godot_level_bridge/`, escritor) y el plugin de Godot (`addons/level_bridge/` del juego, lector). Cualquier cambio se hace en los dos lados a la vez, junto con sus tests, y se regeneran los fixtures (`UPDATE_FIXTURES=1 ./run_tests.sh`).
 
-Estado: **fases B0–B2** (geometría estática, placeholders, marcadores, colisores, áreas, paths). Lo marcado *(fase N)* está diseñado en `ANALISIS_Level_Bridge.md` §5 y se fija aquí al implementarse.
+Estado: **fases B0–B3** (geometría estática, placeholders, marcadores, colisores, áreas, paths, instancias de Geometry Nodes como MultiMesh). Lo marcado *(fase N)* está diseñado en `ANALISIS_Level_Bridge.md` §5 y se fija aquí al implementarse.
 
 ## 1. Archivos
 
@@ -10,7 +10,8 @@ Estado: **fases B0–B2** (geometría estática, placeholders, marcadores, colis
 |---|---|
 | `<salida>/<nivel>.level.json` | Manifiesto del nivel (este documento) |
 | `<salida>/<nivel>_static.glb` | Geometría estática del nivel (no existe si el nivel no tiene) |
-| `<salida>/multimesh/*.gmmi` + `*.glb` *(fase 3)* | Transforms y malla de cada MultiMesh |
+| `<salida>/multimesh/<nivel>_<host>_<geometría>.glb` | Malla de un MultiMesh, en el origen |
+| `<salida>/multimesh/<nivel>_<host>_<geometría>_<trozo>.gmmi` | Transformaciones de un trozo del MultiMesh |
 | `<assets>/<asset>.glb` (+ `.asset.json`) *(fase 4)* | Colecciones instanciadas |
 
 Carpetas por defecto, relativas al `.blend` (`levels/<área>/<sala>/source/<sala>.blend`): salida `//../generated/`, assets `//../../_kit/bridge_assets/`. Ambas deben estar dentro del proyecto Godot. El nombre del nivel es el del `.blend` (o `level_name` de la escena), limpiado con `bpy.path.clean_name`.
@@ -54,7 +55,7 @@ Comunes:
 | Campo | Tipo | Significado |
 |---|---|---|
 | `uid` | string | Identificador estable: se guarda en el objeto de Blender (`gbridge.uid`) y como metadata `gbridge_uid` del nodo en Godot. Al duplicar un objeto, la copia recibe uno nuevo. |
-| `type` | string | `placeholder`, `marker`, `collider`, `area`, `path` |
+| `type` | string | `placeholder`, `marker`, `collider`, `area`, `path`, `multimesh` |
 | `name` | string | Nombre del objeto; nombre del nodo en Godot. |
 | `xform` | 12 floats | Transform en espacio Godot: columnas de la base x, y, z y origen. |
 
@@ -65,10 +66,26 @@ Comunes:
 | `collider` | forma (§5), `layer`, `mask`, `body` (`static` \| `animatable`), `group`. `xform` = centro de la forma, sin escala. | `StaticBody3D`/`AnimatableBody3D` + `CollisionShape3D` "Shape". Los colisores con el mismo `group` comparten un cuerpo (llamado como el grupo, en el origen) con una `CollisionShape3D` por colisor (llamada como el colisor). |
 | `area` | forma (§5), `layer`, `mask`, `scene` (opcional, raíz Area3D), `props`. | `Area3D` (o la instancia de `scene`) + `CollisionShape3D` "Shape". Sin `scene`, `props` → metadata. |
 | `path` | `splines`, `props`. `xform` sin escala (horneada en los puntos). | `Path3D` con el primer spline; `props` → metadata. |
+| `multimesh` | `mesh` (GLB relativo al manifiesto), `chunks`: `[{"transforms": "multimesh/….gmmi", "count": n}]`. Sin `xform` ni `props`; `uid` = `<uid del host>:<geometría>`. | `Node3D` con un `BridgeMultiMesh` (`MultiMeshInstance3D`) por trozo, que lee su `.gmmi` y la malla del GLB al cargar (no se guardan en la escena). |
 
 `layer`/`mask`: números de capa de Godot (1–32). Si el objeto no marca ninguno: colisor → capa `world` (o 1), máscara vacía; área → máscara `player` (si existen esos nombres en `project.godot`).
 
 `splines`: `[{"closed": bool, "points": [{"p": [x,y,z], "in": [...], "out": [...], "tilt": float}]}]`, con `in`/`out` relativos al punto (manijas Bézier; ceros en poly/NURBS).
+
+## 4b. Instancias de Geometry Nodes
+
+Opción "Instancias" de cada objeto de geometría estática (o por defecto de la escena):
+
+| Opción | Resultado |
+|---|---|
+| **MultiMesh** (por defecto) | Solo las instancias, agrupadas por la geometría instanciada (instancias de objeto o de geometría), como entidades `multimesh`. **La geometría propia del objeto no se exporta** (p. ej. el camino guía de un scatter). |
+| Realizar | Cada instancia como un nodo de la geometría estática que comparte la malla, junto con la geometría propia del objeto. |
+| Ignorar | No se exportan las instancias; la geometría propia del objeto sí. |
+| Escenas *(fase 4)* | Por ahora se exporta como MultiMesh (aviso en Validación). |
+
+Trozos: las instancias se agrupan por `floor(x / tamaño)` (`Trozo MultiMesh`, 20 m por defecto) para que Godot descarte los que no ve.
+
+`.gmmi`: `"GMMI0001"`, `uint32` cantidad y por instancia 12 `float32` little-endian (columnas x, y, z de la base y origen, ya en espacio Godot). En un juego exportado, los `.gmmi` deben incluirse en los filtros de recursos no importados de la exportación (`*.gmmi`).
 
 ## 5. Formas
 

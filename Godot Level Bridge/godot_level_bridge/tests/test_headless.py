@@ -247,6 +247,40 @@ def _empty(name, col, location=(0, 0, 0), role='AUTO'):
     return obj
 
 
+def _scatter(name, col, source, count, spacing, location):
+    """Mesh object whose Geometry Nodes output only instances of `source` along X."""
+    tree = bpy.data.node_groups.new(name, 'GeometryNodeTree')
+    tree.interface.new_socket("Geometry", in_out='INPUT', socket_type='NodeSocketGeometry')
+    tree.interface.new_socket("Geometry", in_out='OUTPUT', socket_type='NodeSocketGeometry')
+    nodes, links = tree.nodes, tree.links
+    group_input = nodes.new('NodeGroupInput')
+    output = nodes.new('NodeGroupOutput')
+    join = nodes.new('GeometryNodeJoinGeometry')
+    line = nodes.new('GeometryNodeMeshLine')
+    line.inputs["Count"].default_value = count
+    line.inputs["Offset"].default_value = (spacing, 0, 0)
+    info = nodes.new('GeometryNodeObjectInfo')
+    info.inputs["Object"].default_value = source
+    on_points = nodes.new('GeometryNodeInstanceOnPoints')
+    links.new(line.outputs["Mesh"], on_points.inputs["Points"])
+    links.new(info.outputs["Geometry"], on_points.inputs["Instance"])
+    # The host keeps its own geometry (like a guide path) joined with the instances.
+    links.new(group_input.outputs[0], join.inputs[0])
+    links.new(on_points.outputs["Instances"], join.inputs[0])
+    links.new(join.outputs[0], output.inputs[0])
+    import bmesh
+    mesh = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=0.5)
+    bm.to_mesh(mesh)
+    bm.free()
+    host = bpy.data.objects.new(name, mesh)
+    host.location = location
+    host.modifiers.new("Scatter", 'NODES').node_group = tree
+    col.objects.link(host)
+    return host
+
+
 def _fixed_uid(obj, uid):
     obj.gbridge.uid = uid
     obj.gbridge.uid_owner = obj.name
@@ -335,6 +369,12 @@ def t_build_sample_level():
     _fixed_uid(rail, "e0000004")
     receiver["path"] = rail
 
+    # Geometry Nodes instances → MultiMesh (source outside the root, like a library object).
+    crystal = _cube("Cristal", scene.collection, location=(0, 0, -20), scale=(0.2, 0.2, 0.5))
+    crystal.scale = (1, 1, 1)
+    scatter = _scatter("Scatter", geo, crystal, 3, 15.0, (0, 6, 0))
+    _fixed_uid(scatter, "s0000001")
+
     # Outside the root, in a skipped collection and in an excluded one: never exported.
     _cube("Helper", scene.collection)
     skipped = _collection("WIP", root)
@@ -352,7 +392,7 @@ def t_build_sample_level():
     assert roles == {
         "Floor": 'STATIC', "PilarA": 'STATIC', "PilarB": 'STATIC', "FloorCol": 'COLLIDER',
         "FarolaA": 'STATIC', "FarolaB": 'STATIC', "FarolaC": 'STATIC',
-        "Mascara": 'STATIC', "SinColores": 'STATIC', "OneWayCol": 'COLLIDER', "PillarCol": 'COLLIDER',
+        "Mascara": 'STATIC', "SinColores": 'STATIC', "Scatter": 'STATIC', "OneWayCol": 'COLLIDER', "PillarCol": 'COLLIDER',
         "Receiver": 'PLACEHOLDER', "Spawn": 'MARKER', "Trigger": 'AREA', "Rail": 'PATH',
     }, roles
 
@@ -365,7 +405,8 @@ def t_export_sample_level():
     data = read_json(MANIFEST)
     assert data["static_scene"] == "room_a_static.glb"
     assert [e["name"] for e in data["entities"]] == \
-        ["FloorCol", "OneWayCol", "PillarCol", "Rail", "Receiver", "Spawn", "Trigger"], data["entities"]
+        ["FloorCol", "OneWayCol", "PillarCol", "Rail", "Receiver", "Spawn", "Trigger", "Scatter_Cristal"], \
+        [e["name"] for e in data["entities"]]
 
 
 def t_static_glb():
@@ -438,6 +479,59 @@ def t_area_marker_placeholder_path():
     assert rail["xform"][9:] == [-2.0, 3.0, 0.0]
 
 
+def t_multimesh_instances():
+    data = read_json(MANIFEST)
+    mm = by_name(data, "Scatter_Cristal")
+    assert mm["type"] == "multimesh" and mm["uid"] == "s0000001:Cristal", mm
+    assert mm["mesh"] == "multimesh/room_a_Scatter_Cristal.glb", mm
+    # x = 0, 15, 30 with 20 m chunks: chunk 0 has two instances, chunk 1 one.
+    assert mm["chunks"] == [
+        {"transforms": "multimesh/room_a_Scatter_Cristal_0.gmmi", "count": 2},
+        {"transforms": "multimesh/room_a_Scatter_Cristal_1.gmmi", "count": 1},
+    ], mm["chunks"]
+    folder = os.path.dirname(MANIFEST)
+    with open(os.path.join(folder, mm["chunks"][0]["transforms"]), "rb") as f:
+        raw = f.read()
+    assert raw[:8] == b"GMMI0001" and struct.unpack("<I", raw[8:12])[0] == 2
+    first = struct.unpack("<12f", raw[12:60])
+    assert close(first, [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -6]), first  # Blender (0, 6, 0) → Godot (0, 0, -6)
+    second = struct.unpack("<12f", raw[60:108])
+    assert close(second[9:], [15, 0, -6]), second
+    mesh_gltf = glb_json(os.path.join(folder, mm["mesh"]))
+    assert len(mesh_gltf["nodes"]) == 1 and mesh_gltf["nodes"][0]["name"].startswith("Cristal"), mesh_gltf["nodes"]
+    assert "translation" not in mesh_gltf["nodes"][0], "the MultiMesh mesh must be at the origin"
+    # A MultiMesh host only exports its instances, not its own geometry.
+    static = glb_json(os.path.join(folder, "room_a_static.glb"))
+    assert "Scatter" not in [n["name"] for n in static["nodes"]]
+
+
+def t_instance_policies():
+    scatter = bpy.data.objects["Scatter"]
+    folder = os.path.dirname(MANIFEST)
+    scatter.gbridge.instances = 'REALIZE'
+    try:
+        mod_result = mod.export.export_level(bpy.context)
+        data = read_json(MANIFEST)
+        assert not [e for e in data["entities"] if e["type"] == "multimesh"]
+        assert not os.path.exists(os.path.join(folder, "multimesh", "room_a_Scatter_Cristal_0.gmmi")), "stale gmmi"
+        static = glb_json(os.path.join(folder, "room_a_static.glb"))
+        nodes = {n["name"]: n for n in static["nodes"]}
+        realized = [n for n in nodes if n.startswith("Scatter_Cristal_")]
+        assert sorted(realized) == ["Scatter_Cristal_0", "Scatter_Cristal_1", "Scatter_Cristal_2"], list(nodes)
+        assert "Scatter" in nodes, "with Realize the host keeps its own geometry"
+        assert len({nodes[n]["mesh"] for n in realized}) == 1, "realized instances should share one mesh"
+        scatter.gbridge.instances = 'IGNORE'
+        result = mod.export.export_level(bpy.context)
+        assert any(i.object == "Scatter" and "ignoradas" in i.message for i in result["issues"])
+        static = glb_json(os.path.join(folder, "room_a_static.glb"))
+        names = [n["name"] for n in static["nodes"]]
+        assert "Scatter" in names, "Ignore drops the instances, not the host's own geometry"
+        assert not [n for n in names if n.startswith("Scatter_Cristal")]
+    finally:
+        scatter.gbridge.instances = 'SCENE'
+        mod.export.export_level(bpy.context)
+
+
 def t_reexport_sample_unchanged():
     m_manifest = os.path.getmtime(MANIFEST)
     result = mod.export.export_level(bpy.context)
@@ -492,6 +586,14 @@ def t_sample_fixture_for_godot():
         os.makedirs(fixture_dir, exist_ok=True)
         for name in ("sample.level.json", "sample_static.glb"):
             shutil.copyfile(os.path.join(SAMPLE_DIR, name), os.path.join(fixture_dir, name))
+        fixture_mm = os.path.join(fixture_dir, "multimesh")
+        if os.path.isdir(fixture_mm):
+            for old in os.listdir(fixture_mm):
+                if old.endswith((".glb", ".gmmi")):
+                    os.remove(os.path.join(fixture_mm, old))
+        os.makedirs(fixture_mm, exist_ok=True)
+        for name in os.listdir(os.path.join(SAMPLE_DIR, "multimesh")):
+            shutil.copyfile(os.path.join(SAMPLE_DIR, "multimesh", name), os.path.join(fixture_mm, name))
         print("   fixtures updated in", fixture_dir)
     fixture = os.path.join(fixture_dir, "sample.level.json")
     if not os.path.isfile(fixture):
@@ -527,6 +629,8 @@ for name, fn in [
     ("blend_untouched", t_blend_untouched),
     ("collider_shapes", t_collider_shapes),
     ("area_marker_placeholder_path", t_area_marker_placeholder_path),
+    ("multimesh_instances", t_multimesh_instances),
+    ("instance_policies", t_instance_policies),
     ("reexport_sample_unchanged", t_reexport_sample_unchanged),
     ("duplicate_uid_is_reassigned", t_duplicate_uid_is_reassigned),
     ("validation_errors_block_export", t_validation_errors_block_export),

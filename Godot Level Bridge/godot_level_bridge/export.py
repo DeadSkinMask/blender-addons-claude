@@ -4,7 +4,7 @@ import os
 
 import bpy
 
-from . import entities, manifest, paths, scope, static_export, validate
+from . import entities, instances, manifest, paths, scope, static_export, validate
 
 # Issues of the last validation/export, shown in the "Validación" panel.
 last_issues = []
@@ -39,9 +39,12 @@ def run_validation(context):
     project_root = paths.project_root_from_prefs(get_prefs(context))
     context.view_layer.update()  # matrix_world must reflect pending transform edits
     entries = scope.collect(scene, context.view_layer)
+    found = instances.collect(context.evaluated_depsgraph_get(), scope.by_role(entries, 'STATIC'))
     entity_objs = [obj for obj, role in entries if role in entities.ENTITY_ROLES]
+    entity_objs += [host for host in found if instances.policy(host, scene) in ('MULTIMESH', 'SCENES')]
     issues = [validate.Issue(validate.INFO, name, msg) for name, msg in entities.ensure_uids(entity_objs)]
     issues += validate.check(entries, project_root, _uid_lookup(entries))
+    issues += validate.check_instances(found, scene)
     last_issues[:] = issues
     return entries, issues, project_root
 
@@ -62,28 +65,48 @@ def export_level(context):
 
     name = level_name(scene)
     data = manifest.new_manifest(name)
-    static_objs = scope.by_role(entries, 'STATIC')
-    static_path = os.path.join(output_dir, manifest.static_filename(name))
-    static_written = False
-    if static_objs:
-        static_written = static_export.export(context, static_objs, static_path, name)
-        data["static_scene"] = manifest.static_filename(name)
-    elif os.path.isfile(static_path):
-        os.remove(static_path)  # stale output of a previous export
-
     depsgraph = context.evaluated_depsgraph_get()
-    uid_of = _uid_lookup(entries)
-    data["entities"] = [
-        entities.build(obj, role, depsgraph, project_root, uid_of)
-        for obj, role in entries if role in entities.ENTITY_ROLES
-    ]
+    static_objs = scope.by_role(entries, 'STATIC')
+    found = instances.collect(depsgraph, static_objs, with_meshes=True)
+    try:
+        by_policy = {}
+        for host, groups in found.items():
+            policy = instances.policy(host, scene)
+            by_policy.setdefault('MULTIMESH' if policy == 'SCENES' else policy, {})[host] = groups
+
+        # A MultiMesh host only contributes its instances: its own geometry (base or
+        # evaluated, e.g. the guide path of a scatter) is not exported.
+        multimesh_hosts = set(by_policy.get('MULTIMESH', {}))
+        static_objs = [obj for obj in static_objs if obj not in multimesh_hosts]
+        static_path = os.path.join(output_dir, manifest.static_filename(name))
+        static_written = None
+        if static_objs:
+            static_written = static_export.export(context, static_objs, static_path, name,
+                                                  extra=instances.realized(by_policy.get('REALIZE', {}), scene))
+        if static_written is None:
+            if os.path.isfile(static_path):
+                os.remove(static_path)  # stale output of a previous export
+        else:
+            data["static_scene"] = manifest.static_filename(name)
+
+        uid_of = _uid_lookup(entries)
+        data["entities"] = [
+            entities.build(obj, role, depsgraph, project_root, uid_of)
+            for obj, role in entries if role in entities.ENTITY_ROLES
+        ]
+        multimesh_files = set()
+        data["entities"] += instances.export_multimesh(
+            context, by_policy.get('MULTIMESH', {}), output_dir, name, multimesh_files)
+        instances.remove_stale(output_dir, name, multimesh_files)
+    finally:
+        instances.free_meshes(found)
 
     path = os.path.join(output_dir, manifest.manifest_filename(name))
     written = manifest.write_if_changed(path, manifest.dumps(data))
     return {
         "path": path,
         "written": written,
-        "static_written": static_written,
+        "static_written": bool(static_written),
         "static": len(static_objs),
         "entities": len(data["entities"]),
         "issues": issues,

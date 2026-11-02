@@ -108,5 +108,23 @@ def check(entries, project_root, uid_of):
     return issues
 
 
+def check_instances(found, scene):
+    """Info about Geometry Nodes instances that will not be exported as asked."""
+    from . import instances
+    issues = []
+    for host, groups in found.items():
+        policy = instances.policy(host, scene)
+        count = sum(len(g.matrices) for g in groups)
+        if policy == 'SCENES':
+            issues.append(Issue(INFO, host.name, "instancias como escenas llegan en la fase 4: se exportan como MultiMesh"))
+        if policy == 'IGNORE':
+            issues.append(Issue(INFO, host.name, "{} instancias ignoradas".format(count)))
+        for group in groups:
+            if group.type not in GEOMETRY_TYPES:
+                issues.append(Issue(INFO, host.name, "instancias de {} ({}) sin geometría: se ignoran".format(
+                    group.name, group.type)))
+    return issues
+
+
 def has_errors(issues):
     return any(i.level == ERROR for i in issues)

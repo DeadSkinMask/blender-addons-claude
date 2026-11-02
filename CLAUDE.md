@@ -49,7 +49,7 @@ Gotchas: instance matrices come from `depsgraph.object_instances` and must be co
 Extension-format addon that exports a Blender level (one room per `.blend`) to a Godot 4.7 project as a manifest + GLBs; the Godot side is the `addons/level_bridge/` plugin inside the game repo `/home/luis/GIT/personal/Godot/elegia/` (its own git repo, with its own CLAUDE.md and tests). Docs in Spanish.
 
 - `ANALISIS_Level_Bridge.md`: design and phases B0–B7. `FORMAT.md`: the manifest contract as implemented; change writer and reader together and update it. The joint order with the game phases is in `elegia/docs/plan_de_fases.md`.
-- Current phase: **B0–B2 implemented** (addon 0.2.0): scope, uids, validation, static GLB via staging copies, placeholders/markers/colliders/areas/paths. Module map: `scope.py` (what is exported + roles), `entities.py` (manifest entities, shapes, props, uids), `validate.py`, `static_export.py` (staging + glTF), `coords.py` (Blender→Godot), `godot_project.py` (layer names from project.godot), `export.py` (operators + orchestration), `ui.py`.
+- Current phase: **B0–B3 implemented** (addon 0.4.0; B3 = Geometry Nodes instances → MultiMesh, `instances.py`): scope, uids, validation, static GLB via staging copies, placeholders/markers/colliders/areas/paths. Module map: `scope.py` (what is exported + roles), `entities.py` (manifest entities, shapes, props, uids), `validate.py`, `static_export.py` (staging + glTF), `coords.py` (Blender→Godot), `godot_project.py` (layer names from project.godot), `export.py` (operators + orchestration), `ui.py`.
 
 ```bash
 cd "Godot Level Bridge"
@@ -67,3 +67,5 @@ blender --command extension validate godot_level_bridge
 - The exporter must never modify the user's `.blend` data: static geometry goes through copies in a temporary scene (`static_export.py`), the original object is renamed only during the glTF export so the copy keeps its name (restored in `finally`), and the window scene is restored because the glTF exporter switches it. Only `gbridge.uid`/`uid_owner` are written. Files are written only when their content changes.
 - Call `view_layer.update()` before reading `matrix_world` (validation does): transforms edited from Python are stale until then.
 - `GLTFState.filename` in Godot has no extension (matters for the import extension's file filter).
+- Geometry Nodes instances come in two kinds in `depsgraph.object_instances`: object instances (`inst.object.original` is the source) and geometry instances (`inst.object.original` is the host itself, `inst.object.data` is the instanced mesh). Copy `inst.object.data` during the iteration; `new_from_object(inst.object)` re-evaluates the host instead.
+- Headless Godot uses a dummy renderer: `MultiMesh.get_instance_transform()` returns identity there, so tests check the `.gmmi` contents instead.

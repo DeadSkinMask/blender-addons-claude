@@ -1,7 +1,7 @@
 """Per-scene, per-collection and per-object bridge settings (bpy PropertyGroups)."""
 
 import bpy
-from bpy.props import BoolProperty, BoolVectorProperty, EnumProperty, PointerProperty, StringProperty
+from bpy.props import BoolProperty, BoolVectorProperty, EnumProperty, FloatProperty, PointerProperty, StringProperty
 
 # Default output folders, relative to the .blend (rooms live in
 # levels/<area>/<room>/source/<room>.blend, see FORMAT.md).
@@ -26,9 +26,9 @@ MODIFIER_POLICIES = [
 ]
 
 INSTANCE_POLICIES = [
-    ('MULTIMESH', "MultiMesh", "Instancias de Geometry Nodes como MultiMeshInstance3D"),
+    ('MULTIMESH', "MultiMesh", "Solo las instancias de Geometry Nodes, como MultiMeshInstance3D; la geometría propia del objeto no se exporta"),
     ('SCENES', "Escenas", "Cada instancia de una colección-asset como instancia de su escena"),
-    ('REALIZE', "Realizar", "Hornear las instancias en la malla estática"),
+    ('REALIZE', "Realizar", "Las instancias como nodos de la geometría estática (malla compartida), junto con la geometría del objeto"),
     ('IGNORE', "Ignorar", "No exportar las instancias"),
 ]
 
@@ -74,6 +74,9 @@ class GBRIDGE_SceneProps(bpy.types.PropertyGroup):
     modifiers: EnumProperty(name="Modificadores", items=MODIFIER_POLICIES, default='APPLY')
     instances: EnumProperty(name="Instancias", items=INSTANCE_POLICIES, default='MULTIMESH')
     vertex_colors: EnumProperty(name="Colores de vértice", items=VERTEX_COLOR_MODES, default='DATA')
+    multimesh_chunk: FloatProperty(
+        name="Trozo MultiMesh (m)", default=20.0, min=1.0,
+        description="Las instancias MultiMesh se dividen en trozos de este ancho en X para que Godot descarte los que no ve")
 
 
 class GBRIDGE_CollectionProps(bpy.types.PropertyGroup):
