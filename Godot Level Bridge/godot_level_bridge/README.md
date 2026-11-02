@@ -53,5 +53,5 @@ B1–B2 (0.2.0–0.3.0):
 - [x] Colores de vértice: llegan a Godot (verificado con la columna en blanco y negro). El damero del suelo de ejemplo no podía verse (caja de 8 vértices) y el degradado original era demasiado sutil. Faltaba poder elegir si el material los usa → modo Datos/Albedo/No exportar (0.3.0).
 - [x] Tras Rebuild la pestaña de la escena queda marcada como modificada (asterisco).
 - [x] Duplicados con Alt+D: en Godot sus `MeshInstance3D` muestran el mismo recurso Mesh.
-- [ ] B3 (0.4.0): un scatter de Geometry Nodes aparece en Godot como MultiMesh, sin la geometría guía del objeto; con "Realizar" sale como nodos estáticos.
+- [x] B3 (0.4.0): un scatter de Geometry Nodes aparece en Godot como MultiMesh, sin la geometría guía del objeto; con "Realizar" sale como nodos estáticos.
 - [x] Modo de colores de vértice (0.3.0): un objeto en "Albedo" se ve con sus colores en Godot (material `<material>_vertex_color`); uno en "Datos" (por defecto) conserva su material sin teñir.

@@ -432,4 +432,5 @@ Cada fase deja algo usable y amplía el formato de forma compatible (el campo `v
 - **0.3.0:** modo de colores de vértice por objeto: Datos (por defecto, el material no los usa: máscaras/shaders), Albedo, No exportar; viaja como extra glTF de la malla.
 - **B1 y B2 cerradas (2026-11-01)** con el checklist manual completo.
 - **B3 implementada (2026-11-01, addon 0.4.0):** instancias de Geometry Nodes (de objeto y de geometría) → MultiMesh por trozos en X (`.gmmi`) o nodos estáticos ("Realizar"); con MultiMesh no se exporta la geometría propia del host; en Godot `BridgeMultiMesh` lee el `.gmmi` al cargar.
+- **B3 verificada (2026-11-02)** con el scatter de cristales de `catedral_01` (274 instancias, colores en modo Albedo).
 - **Siguiente:** G4 (salas y transiciones).
