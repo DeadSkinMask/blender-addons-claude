@@ -69,3 +69,13 @@ blender --command extension validate godot_level_bridge
 - `GLTFState.filename` in Godot has no extension (matters for the import extension's file filter).
 - Geometry Nodes instances come in two kinds in `depsgraph.object_instances`: object instances (`inst.object.original` is the source) and geometry instances (`inst.object.original` is the host itself, `inst.object.data` is the instanced mesh). Copy `inst.object.data` during the iteration; `new_from_object(inst.object)` re-evaluates the host instead.
 - Headless Godot uses a dummy renderer: `MultiMesh.get_instance_transform()` returns identity there, so tests check the `.gmmi` contents instead.
+
+## RustRemesher
+
+Quad remesher in two parts: `engine/` (Rust, no external crates yet) and later `addon/` (Python, Blender 5.2 extension) that calls it. Inspired by Quad Remesher's *bridge protocol* only (settings file, progress file, engine as a subprocess); the Quad Remesher binaries were not decompiled. The algorithm is a Rust port of SculptForge's "QRemesh 2" (github.com/islandmed/SculptForge, `src/core/QRemesh2*.cpp`, GPL-3.0) so the project is **GPL-3.0-or-later**: keep SPDX headers and credit it. No licensing, downloads or network anywhere. `FORMAT.md` is the addon↔engine contract (settings keys, progress file, binary mesh format with sections `COLR/MATL/SHRP/GUID`); change writer and reader together and bump the magic.
+
+- Phases: 1 engine skeleton (**done**: CLI, settings, progress, binary+OBJ I/O, topology stats, cleaning; `run` passes the mesh through) → 2 BVH + proxy surface → 3 curvature + cross field → 4 integer-grid map + extraction → 5 hard edges/materials/vertex paint/symmetry/guides → 6 addon (path to the engine in preferences, curve guides) → 7 e2e tests, ZIP, docs.
+- The exchange format is binary (not OBJ/FBX/glTF: OBJ keeps quads but is slow text and holds no attributes; glTF triangulates). Output mesh has new vertices/faces, no correspondence with the input.
+- `cd RustRemesher/engine && cargo test` (unit + `tests/e2e.rs`, which runs the real binary); `./build.sh` builds `../dist/rustremesher` (Linux) and `../dist/rustremesher.exe` (cross-compiled with `cargo xwin`, static CRT, no VC++ redistributable); `./wine_smoke.sh` runs the exe under Wine.
+- Wine 6.0.3 here lacks `bcryptprimitives.dll` (used by Rust std on Windows 10+), so `wine_smoke.sh` builds a test-only stand-in DLL (`tools/bcryptprimitives_shim`) next to a copy of the exe; never ship it. Use `wine64`, with `Z:` paths.
+- Blender's mesh data stays in the object's local space; the addon must not change user data, same rule as Godot Level Bridge.
