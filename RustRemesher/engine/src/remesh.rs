@@ -63,7 +63,7 @@ pub struct PieceResult {
     /// Proxy triangles the map turned over (should be ~0).
     pub flipped: usize,
     pub proxy_triangles: usize,
-    /// 0: the first proxy density worked; 1: the second one was needed.
+    /// Index into `DENSITIES` of the proxy density that produced this result.
     pub density_try: usize,
 }
 
@@ -145,24 +145,40 @@ fn demote_soft_edges(px: &mut Proxy, keep_groups: bool, h0: f32) -> usize {
     demoted
 }
 
-/// Remeshes one piece into quads. Tries two proxy densities and keeps the first result that is a 2-manifold.
-/// `progress` gets values in 0..1 and returns false to cancel.
+/// Proxy densities in the order they are tried. No density wins everywhere (a sweep over 9 shapes x 5 sizes gave
+/// 504 / 437 / 503 / 487 total poles for 2.5 / 3.0 / 3.2 / 4.0), so 3.0 goes first and the others are fallbacks.
+const DENSITIES: [f32; 3] = [3.0, 2.5, 3.2];
+
+/// Remeshes one piece into quads. Tries up to three proxy densities: the first result that is a 2-manifold with
+/// few poles (at most 1.5 x the field's singularities + 4) is taken at once; otherwise the manifold result with the
+/// fewest poles (then the smallest angle error) wins. `progress` gets values in 0..1 and returns false to cancel.
 pub fn remesh_piece(piece: &WorkMesh, opt: &PieceOptions, progress: &(dyn Fn(f32) -> bool + Sync)) -> Result<PieceResult, PieceError> {
     let mut last = String::from("no result");
-    for (i, density) in [2.5f32, 3.2].into_iter().enumerate() {
+    let mut best: Option<(usize, f32, PieceResult)> = None;
+    for (i, density) in DENSITIES.into_iter().enumerate() {
         match remesh_piece_once(piece, opt, density, progress) {
             Ok(mut r) => {
                 if quads_manifold(r.mesh.p.len(), &r.mesh.quads, &r.mesh.tris) {
                     r.density_try = i;
-                    return Ok(r);
+                    let q = quad_quality(&r.mesh);
+                    if q.poles as f32 <= 1.5 * r.singularities as f32 + 4.0 {
+                        return Ok(r);
+                    }
+                    if best.as_ref().is_none_or(|b| (q.poles, q.angle_deviation) < (b.0, b.1)) {
+                        best = Some((q.poles, q.angle_deviation, r));
+                    }
+                } else {
+                    last = "the quads are not a 2-manifold".into();
                 }
-                last = "the quads are not a 2-manifold".into();
             }
             Err(PieceError::Cancelled) => return Err(PieceError::Cancelled),
             Err(PieceError::Failed(why)) => last = why,
         }
     }
-    Err(PieceError::Failed(last))
+    match best {
+        Some((_, _, r)) => Ok(r),
+        None => Err(PieceError::Failed(last)),
+    }
 }
 
 fn remesh_piece_once(piece: &WorkMesh, opt: &PieceOptions, density: f32, progress: &(dyn Fn(f32) -> bool + Sync)) -> Result<PieceResult, PieceError> {
