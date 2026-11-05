@@ -58,5 +58,7 @@ usó su código ni sus binarios.
 - La simetría supone el objeto simétrico y trabaja en el espacio local del objeto.
 - Un cono de 64 lados con más de ~2000 cuads sale cerrado pero con polos de más (169 a 5000 cuads) y tarda; está
   documentado para arreglarlo en `CLAUDE.md` ("Known problem: cone").
-- Superficies abiertas muy grandes (≈20 000 cuads) o con objetivos diminutos (decenas de cuads) pueden salir con
-  más polos de la cuenta. Detalles y diagnósticos en `CLAUDE.md`.
+- Superficies abiertas con el borde irregular y objetivos pequeños (un cuenco de borde dentado a 1000 cuads sale con
+  15 polos y muchos triángulos volteados en el mapa) pueden tener polos de más. Con bordes limpios no se ha visto el
+  problema. Diagnóstico en `CLAUDE.md` ("Known problem: open surfaces at small counts").
+- Objetivos diminutos (decenas de cuads) dan calidad pobre.
