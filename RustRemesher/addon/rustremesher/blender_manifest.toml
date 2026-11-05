@@ -1,0 +1,17 @@
+schema_version = "1.0.0"
+
+id = "rustremesher"
+version = "0.1.0"
+name = "RustRemesher"
+tagline = "Quad remesher driven by the local rustremesher engine"
+maintainer = "Luis Flores <luis.flores.zamorano@emeal.nttdata.com>"
+type = "add-on"
+
+blender_version_min = "5.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+[permissions]
+files = "Temporary folder to exchange meshes with the engine"
