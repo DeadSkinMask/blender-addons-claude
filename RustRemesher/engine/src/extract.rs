@@ -394,7 +394,7 @@ pub fn extract_lattice(p: &Proxy, fr: &Frames, map: &GridMap, h: f32) -> Poly {
                     let deg = ring[v as usize].len() as u32;
                     k = (back + deg - 1) % deg;
                     u = v;
-                    if face.len() > 64 {
+                    if face.len() > he_off[nc] as usize {
                         break;
                     }
                 }

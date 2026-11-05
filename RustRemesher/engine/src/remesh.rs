@@ -551,6 +551,43 @@ mod tests {
         assert!(volume(&out) > 0.0, "turned inside out");
     }
 
+    /// Regression: the face tracing used to stop at 64 vertices, so the "outside" face of an open surface with a
+    /// longer border (a hemisphere's rim here, ~250) came out in pieces that ended up inside the mesh as odd faces
+    /// with huge diagonals and a few dozen extra poles.
+    #[test]
+    fn open_surface_with_a_long_border_has_no_stray_faces() {
+        let sphere = crate::testmesh::uv_sphere(96, 64);
+        let keep: Vec<[u32; 3]> = sphere.t.iter().copied().filter(|t| t.iter().map(|&v| sphere.p[v as usize].z).sum::<f32>() > 0.0).collect();
+        let mut remap = vec![u32::MAX; sphere.p.len()];
+        let mut p = Vec::new();
+        let t: Vec<[u32; 3]> = keep
+            .iter()
+            .map(|tri| {
+                tri.map(|v| {
+                    if remap[v as usize] == u32::MAX {
+                        remap[v as usize] = p.len() as u32;
+                        p.push(sphere.p[v as usize]);
+                    }
+                    remap[v as usize]
+                })
+            })
+            .collect();
+        let src = WorkMesh { p, t, group: vec![], color: vec![] };
+        let r = remesh(&src, 6000.0);
+        let q = quad_quality(&r.mesh);
+        assert!(q.boundary_vertices > 150, "{} boundary vertices", q.boundary_vertices);
+        assert!(r.mesh.tris.is_empty(), "{} triangles left over", r.mesh.tris.len());
+        assert!(q.poles <= 12, "{} poles (the field has {})", q.poles, r.singularities);
+        let mut longest = 0f32;
+        for f in &r.mesh.quads {
+            for k in 0..4 {
+                longest = longest.max((r.mesh.p[f[k] as usize] - r.mesh.p[f[(k + 1) % 4] as usize]).length());
+            }
+        }
+        let h = (src.area() / r.mesh.quads.len() as f64).sqrt() as f32;
+        assert!(longest < 3.0 * h, "longest edge {longest} for a quad edge of {h}");
+    }
+
     #[test]
     fn torus_has_no_poles_at_all() {
         let src = torus(1.0, 0.4, 80, 40);
