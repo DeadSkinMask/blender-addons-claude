@@ -11,6 +11,7 @@ rustremesher - quad remesher engine
 
 USAGE:
   rustremesher -s <settings.txt>        remesh as described by the settings file
+  rustremesher --remesh <in> <out> [quads]  remesh a mesh file to the given number of quads (default 5000)
   rustremesher --info <mesh>            print mesh statistics
   rustremesher --convert <in> <out>     convert between .obj and the binary format (debugging)
   rustremesher --proxy <in> <out> [quads]  write the proxy triangle mesh for a target quad count (debugging)
@@ -26,6 +27,54 @@ fn print_stats(label: &str, s: &Stats) {
         s.vertices, s.faces, s.quads, s.triangles, s.ngons, s.edges, s.boundary_edges, s.non_manifold_edges,
         s.inconsistent_edges, s.components, s.euler
     );
+}
+
+fn print_report(report: &rustremesher::RunReport) {
+    print_stats("input ", &report.input);
+    println!(
+        "cleaned: {} degenerate faces and {} unused vertices removed",
+        report.cleaned.dropped_faces, report.cleaned.dropped_vertices
+    );
+    for (i, p) in report.pieces.iter().enumerate() {
+        match &p.error {
+            None => println!(
+                "piece {}: {} triangles -> {} quads (wanted {}), {} leftover triangles, {} singularities, {} flipped in the map",
+                i + 1, p.source_triangles, p.quads, p.want_quads, p.triangles, p.singularities, p.flipped
+            ),
+            Some(why) => println!("piece {}: {} triangles kept as they were: {why}", i + 1, p.source_triangles),
+        }
+    }
+    print_stats("output", &report.output);
+    let q = &report.quality;
+    println!(
+        "quality: {} poles (valence 3: {}, 5: {}, 6+: {}), {} boundary vertices, corner angles off 90 by {:.1} deg on average ({:.1} at the 99th percentile)",
+        q.poles, q.valence[3], q.valence[5], q.valence[6] + q.valence[7], q.boundary_vertices, q.angle_deviation, q.angle_deviation_p99
+    );
+}
+
+fn cmd_remesh_file(input: &Path, output: &Path, quads: Option<&str>) -> u8 {
+    let started = std::time::Instant::now();
+    let mut settings = Settings { file_in: input.to_path_buf(), file_out: output.to_path_buf(), ..Default::default() };
+    if let Some(q) = quads {
+        match q.parse::<u32>() {
+            Ok(n) if n >= 1 => settings.target_quad_count = n,
+            _ => {
+                eprintln!("quads must be a whole number >= 1");
+                return ERR_SETTINGS as u8;
+            }
+        }
+    }
+    match run(&settings, &Progress::new(None)) {
+        Ok(report) => {
+            print_report(&report);
+            println!("took {:.3} s", started.elapsed().as_secs_f64());
+            0
+        }
+        Err(e) => {
+            eprintln!("error: {}", e.message);
+            e.code as u8
+        }
+    }
 }
 
 fn cmd_remesh(settings_path: &Path) -> u8 {
@@ -51,12 +100,7 @@ fn cmd_remesh(settings_path: &Path) -> u8 {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&settings, &progress)));
     match result {
         Ok(Ok(report)) => {
-            print_stats("input ", &report.input);
-            println!(
-                "cleaned: {} degenerate faces and {} unused vertices removed",
-                report.cleaned.dropped_faces, report.cleaned.dropped_vertices
-            );
-            print_stats("output", &report.output);
+            print_report(&report);
             0
         }
         Ok(Err(e)) => {
@@ -233,6 +277,8 @@ fn main() -> ExitCode {
     let code = match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["-s", file] => cmd_remesh(Path::new(file)),
         ["--info", file] => cmd_info(Path::new(file)),
+        ["--remesh", a, b] => cmd_remesh_file(Path::new(a), Path::new(b), None),
+        ["--remesh", a, b, q] => cmd_remesh_file(Path::new(a), Path::new(b), Some(q)),
         ["--convert", a, b] => cmd_convert(Path::new(a), Path::new(b)),
         ["--proxy", a, b] => cmd_proxy(Path::new(a), Path::new(b), None),
         ["--proxy", a, b, q] => cmd_proxy(Path::new(a), Path::new(b), Some(q)),

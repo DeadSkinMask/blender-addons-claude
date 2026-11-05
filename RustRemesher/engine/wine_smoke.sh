@@ -14,11 +14,12 @@ exe="$WINE $work/rustremesher.exe"
 
 printf 'v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\nv -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\nf 1 4 3 2\nf 5 6 7 8\nf 1 2 6 5\nf 3 4 8 7\nf 2 3 7 6\nf 4 1 5 8\n' > "$work/cube.obj"
 $exe --convert "Z:$work/cube.obj" "Z:$work/cube.rrm"
-printf 'FileIn="Z:%s/cube.rrm"\r\nFileOut="Z:%s/out.rrm"\r\nProgressFile="Z:%s/progress.txt"\r\n' "$work" "$work" "$work" > "$work/s.txt"
+printf 'FileIn="Z:%s/cube.rrm"\r\nFileOut="Z:%s/out.rrm"\r\nProgressFile="Z:%s/progress.txt"\r\nTargetQuadCount=100\r\n' "$work" "$work" "$work" > "$work/s.txt"
 $exe -s "Z:$work/s.txt"
 [ "$(cat "$work/progress.txt")" = "2" ] || { echo "FAIL: progress is not 2"; exit 1; }
 [ "$(head -c 8 "$work/out.rrm")" = "RRMO0001" ] || { echo "FAIL: bad output"; exit 1; }
-$exe --info "Z:$work/out.rrm" | grep -q "6 quads" || { echo "FAIL: quads lost"; exit 1; }
+$exe --info "Z:$work/out.rrm" > "$work/info.txt"
+grep -q " 0 tris" "$work/info.txt" && grep -q "euler 2" "$work/info.txt" && grep -q "0 boundary, 0 non-manifold, 0 flipped, 1 components" "$work/info.txt" || { echo "FAIL: the remeshed cube is not a closed all-quad mesh"; cat "$work/info.txt"; exit 1; }
 # the proxy stage (BVH + threads via rayon) on a closed mesh
 $exe --proxy "Z:$work/cube.rrm" "Z:$work/proxy.rrm" 200 > "$work/proxy.txt"
 grep -q "0 boundary, 0 non-manifold, 0 flipped, 1 components, euler 2" "$work/proxy.txt" || { echo "FAIL: proxy is not a closed sphere"; cat "$work/proxy.txt"; exit 1; }

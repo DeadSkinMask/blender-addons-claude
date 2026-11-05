@@ -1,16 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! RustRemesher engine. Phases 1-2: command line, settings, progress, mesh I/O, BVH and the proxy surface are in
-//! place; `run` still validates and cleans the input and writes it back unchanged (the remeshing itself comes in
-//! the next phases). `make_proxy` / `--proxy` expose the proxy for inspection.
+//! RustRemesher engine: command line, settings, progress, mesh I/O, and the quad remesher (proxy surface, cross field,
+//! integer-grid map, extraction, relaxation). `run` validates and cleans the input, remeshes it piece by piece and
+//! writes the quads. `make_proxy` / `make_field` (`--proxy`, `--field`) expose the intermediate stages.
+
+// The numeric code indexes several parallel arrays by the same loop variable (as the C++ it is ported from does);
+// iterator chains would hide that structure.
+#![allow(clippy::needless_range_loop)]
 
 pub mod bvh;
 pub mod complex;
+pub mod eliminator;
+pub mod extract;
 pub mod field;
+pub mod gridmap;
 pub mod io_bin;
 pub mod io_obj;
 pub mod mesh;
 pub mod progress;
 pub mod proxy;
+pub mod relax;
+pub mod remesh;
 pub mod settings;
 pub mod solver;
 #[cfg(test)]
@@ -22,6 +31,8 @@ pub mod workmesh;
 use bvh::{SegmentBvh, TriangleBvh};
 use mesh::{CleanReport, Mesh};
 use proxy::Proxy;
+use remesh::{PieceError, PieceOptions};
+use vec3::V3;
 use workmesh::{detect_features, WorkMesh};
 use progress::Progress;
 use settings::Settings;
@@ -53,6 +64,8 @@ pub struct RunReport {
     pub input: Stats,
     pub cleaned: CleanReport,
     pub output: Stats,
+    pub pieces: Vec<PieceReport>,
+    pub quality: remesh::QuadQuality,
 }
 
 fn is_obj(p: &Path) -> bool {
@@ -146,6 +159,114 @@ pub fn make_proxy(mesh: &Mesh, settings: &Settings) -> Result<(Proxy, ProxyInfo)
     Ok((proxy, info))
 }
 
+/// What happened to one connected piece of the input.
+#[derive(Debug, Clone)]
+pub struct PieceReport {
+    pub source_triangles: usize,
+    pub want_quads: usize,
+    pub quads: usize,
+    /// Leftover triangles (odd faces without a partner), or all of the piece's triangles when it was kept as it was.
+    pub triangles: usize,
+    pub singularities: usize,
+    pub flipped: usize,
+    /// Why the piece could not be remeshed (it is then kept as its original triangles).
+    pub error: Option<String>,
+}
+
+pub struct RemeshResult {
+    pub mesh: Mesh,
+    pub pieces: Vec<PieceReport>,
+}
+
+/// Quality of a mesh made of quads and triangles (other faces are ignored).
+pub fn quality_of_mesh(m: &Mesh) -> remesh::QuadQuality {
+    let mut q = remesh::QuadMesh { p: m.positions.iter().map(|&a| V3::from_array(a)).collect(), ..Default::default() };
+    for f in m.faces() {
+        match f.len() {
+            4 => q.quads.push([f[0], f[1], f[2], f[3]]),
+            3 => q.tris.push([f[0], f[1], f[2]]),
+            _ => {}
+        }
+    }
+    remesh::quad_quality(&q)
+}
+
+/// Fewest quads asked of a piece: small ones (eyes, rivets) still get a few dozen.
+const MIN_PIECE_QUADS: f64 = 24.0;
+
+/// Remeshes a validated, cleaned mesh into quads, piece by piece (connected components). `progress(value, text)`
+/// is called with values in 0..1; returning false cancels.
+pub fn remesh_mesh(
+    mesh: &Mesh,
+    settings: &Settings,
+    progress: &(dyn Fn(f32, &str) -> bool + Sync),
+) -> Result<Option<RemeshResult>, EngineError> {
+    let work = WorkMesh::from_mesh(mesh, settings.use_material_ids, settings.use_vertex_color_map);
+    let pieces = remesh::split_components(&work);
+    let areas: Vec<f64> = pieces.iter().map(|c| c.mesh.area()).collect();
+    let total_area: f64 = areas.iter().sum();
+    if total_area.is_nan() || total_area <= 0.0 {
+        return Err(EngineError::new(ERR_MESH, "The input mesh has no surface area"));
+    }
+    let n = pieces.len();
+    let mut out = Mesh::default();
+    let mut reports = Vec::with_capacity(n);
+    for (i, c) in pieces.iter().enumerate() {
+        let want = (settings.target_quad_count as f64 * areas[i] / total_area).max(MIN_PIECE_QUADS);
+        let opt = PieceOptions {
+            want_quads: want,
+            keep_groups: settings.use_material_ids,
+            detect_edges: settings.auto_detect_hard_edges,
+            user_sharp: remesh::sharp_for_component(c, &mesh.attrs.sharp_edges),
+            smooth_iterations: 6,
+        };
+        let label = if n > 1 { format!("Remeshing piece {} of {}", i + 1, n) } else { "Remeshing".to_string() };
+        // this piece owns the progress range [lo, hi]; a negative value only asks whether to go on
+        let (lo, hi) = (0.25 + 0.65 * i as f32 / n as f32, 0.25 + 0.65 * (i + 1) as f32 / n as f32);
+        let report = |f: f32| if f < 0.0 { progress(-1.0, "") } else { progress(lo + (hi - lo) * f, &label) };
+        let base = out.positions.len() as u32;
+        let mut rep = PieceReport {
+            source_triangles: c.mesh.t.len(),
+            want_quads: want.round() as usize,
+            quads: 0,
+            triangles: 0,
+            singularities: 0,
+            flipped: 0,
+            error: None,
+        };
+        match remesh::remesh_piece(&c.mesh, &opt, &report) {
+            Ok(r) => {
+                out.positions.extend(r.mesh.p.iter().map(|v| v.to_array()));
+                for q in &r.mesh.quads {
+                    out.face_sizes.push(4);
+                    out.indices.extend(q.iter().map(|v| v + base));
+                }
+                for t in &r.mesh.tris {
+                    out.face_sizes.push(3);
+                    out.indices.extend(t.iter().map(|v| v + base));
+                }
+                rep.quads = r.mesh.quads.len();
+                rep.triangles = r.mesh.tris.len();
+                rep.singularities = r.singularities;
+                rep.flipped = r.flipped;
+            }
+            Err(PieceError::Cancelled) => return Ok(None),
+            Err(PieceError::Failed(why)) => {
+                // keep the piece as it was rather than lose it
+                out.positions.extend(c.mesh.p.iter().map(|v| v.to_array()));
+                for t in &c.mesh.t {
+                    out.face_sizes.push(3);
+                    out.indices.extend(t.iter().map(|v| v + base));
+                }
+                rep.triangles = c.mesh.t.len();
+                rep.error = Some(why);
+            }
+        }
+        reports.push(rep);
+    }
+    Ok(Some(RemeshResult { mesh: out, pieces: reports }))
+}
+
 pub fn run(settings: &Settings, progress: &Progress) -> Result<RunReport, EngineError> {
     init_threads(settings.threads);
     progress.update(0.02, "Reading input mesh", 0.2);
@@ -163,13 +284,20 @@ pub fn run(settings: &Settings, progress: &Progress) -> Result<RunReport, Engine
     if mesh.face_count() == 0 {
         return Err(EngineError::new(ERR_MESH, "The input mesh has no usable faces"));
     }
-    let output = topology::analyze(&mesh);
+    let result = remesh_mesh(&mesh, settings, &|f, text| {
+        if f >= 0.0 {
+            progress.update(f, text, 0.25);
+        }
+        true
+    })?
+    .expect("the engine never cancels itself");
+    let output = topology::analyze(&result.mesh);
 
-    // Phase 2+ replaces this with the actual remeshing.
-    progress.update(0.90, "Writing result", 0.2);
-    write_mesh(&settings.file_out, &mesh)
+    progress.update(0.95, "Writing result", 0.2);
+    write_mesh(&settings.file_out, &result.mesh)
         .map_err(|e| EngineError::new(ERR_WRITE, format!("Cannot write output: {e}")))?;
 
     progress.done();
-    Ok(RunReport { input, cleaned, output })
+    let quality = quality_of_mesh(&result.mesh);
+    Ok(RunReport { input, cleaned, output, pieces: result.pieces, quality })
 }

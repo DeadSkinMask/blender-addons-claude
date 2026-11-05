@@ -43,23 +43,69 @@ fn write_settings(dir: &Path, input: &Path, extra: &str) -> PathBuf {
 }
 
 #[test]
-fn quads_pass_through_and_progress_reports_success() {
+fn a_cube_is_remeshed_to_about_the_wanted_quads_and_progress_reports_success() {
     let dir = workdir("ok");
     let input = dir.join("in.rrm");
-    let mut m = cube();
-    m.attrs.materials = Some(vec![0, 0, 1, 1, 2, 2]);
-    io_bin::write_file(&input, &m, MAGIC_IN).unwrap();
+    io_bin::write_file(&input, &cube(), MAGIC_IN).unwrap();
+    // the settings file as the addon writes it: CRLF-free, quoted paths, TargetQuadCount=100
     let settings = write_settings(&dir, &input, "SymAxis=X\n");
 
     let out = exe().arg("-s").arg(&settings).output().unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     assert_eq!(std::fs::read_to_string(dir.join("progress.txt")).unwrap(), "2\n");
 
-    let res = io_bin::read_file(&dir.join("out.rrm")).unwrap();
-    assert_eq!(res.face_sizes, vec![4; 6]); // quads survive
-    assert_eq!(res.attrs.materials, m.attrs.materials);
     let bytes = std::fs::read(dir.join("out.rrm")).unwrap();
     assert_eq!(&bytes[..8], b"RRMO0001");
+    let res = io_bin::read_file(&dir.join("out.rrm")).unwrap();
+    assert!(res.face_sizes.iter().all(|&s| s == 4), "all quads");
+    let st = rustremesher::topology::analyze(&res);
+    assert!(st.is_closed_manifold() && st.euler == 2, "{st:?}");
+    assert!((res.face_count() as f64 / 100.0 - 1.0).abs() < 0.3, "{} quads for 100", res.face_count());
+    // the cube's corners are still there
+    for c in [[-1.0f32, -1.0, -1.0], [1.0, 1.0, 1.0], [-1.0, 1.0, -1.0], [1.0, -1.0, 1.0]] {
+        assert!(res.positions.iter().any(|p| (0..3).all(|k| (p[k] - c[k]).abs() < 0.05)), "corner {c:?} lost");
+    }
+}
+
+#[test]
+fn the_progress_file_only_ever_holds_valid_non_decreasing_values_and_ends_at_two() {
+    let dir = workdir("progress");
+    let input = dir.join("in.rrm");
+    // an open band of a UV sphere, dense enough that the engine works for a moment
+    let n = 60usize;
+    let mut m = Mesh::default();
+    for j in 0..=n {
+        for i in 0..=n {
+            let (u, v) = (std::f32::consts::PI * 2.0 * i as f32 / n as f32, std::f32::consts::PI * j as f32 / n as f32);
+            m.positions.push([v.sin() * u.cos(), v.sin() * u.sin(), v.cos()]);
+        }
+    }
+    let id = |i: usize, j: usize| (j * (n + 1) + i % (n + 1)) as u32;
+    for j in 1..n - 1 {
+        for i in 0..n {
+            m.face_sizes.push(4);
+            m.indices.extend_from_slice(&[id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j + 1)]);
+        }
+    }
+    io_bin::write_file(&input, &m, MAGIC_IN).unwrap();
+    let settings = write_settings(&dir, &input, "TargetQuadCount=400\n");
+    let mut child = exe().arg("-s").arg(&settings).spawn().unwrap();
+    let progress = dir.join("progress.txt");
+    let mut seen: Vec<f64> = Vec::new();
+    while child.try_wait().unwrap().is_none() {
+        if let Ok(t) = std::fs::read_to_string(&progress) {
+            // the file is replaced atomically, so whatever we read is a whole file
+            let first = t.lines().next().expect("a progress file is never empty");
+            let value: f64 = first.parse().expect("the first line is a number");
+            assert!((0.0..=1.0).contains(&value) || value == 2.0, "invalid progress value {value}");
+            if seen.last() != Some(&value) {
+                seen.push(value);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(std::fs::read_to_string(&progress).unwrap(), "2\n");
+    assert!(seen.windows(2).all(|w| w[0] <= w[1]), "progress went backwards: {seen:?}");
 }
 
 #[test]

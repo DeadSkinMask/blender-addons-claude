@@ -552,20 +552,9 @@ pub fn field_debug_mesh(p: &Proxy, f: &Frames, field: &CrossField, length: f32, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bvh::{SegmentBvh, TriangleBvh};
-    use crate::proxy::build_proxy;
     use crate::testmesh::{grid_cube, grid_plane, icosphere, torus, tube};
-    use crate::workmesh::{detect_features, WorkMesh};
 
-    /// The proxy of `src` at proxy edge `edge` (hard edges and borders as features), sizes set to 3 edges.
-    fn proxy_of(src: &WorkMesh, edge: f32) -> Proxy {
-        let surface = TriangleBvh::build(src.p.clone(), src.t.clone());
-        let features = detect_features(src, false, 60f32.to_radians().cos(), &[], 3.0 * edge);
-        let segs = (!features.seg_a.is_empty()).then(|| SegmentBvh::build(features.seg_a.clone(), features.seg_b.clone()));
-        let (_b, mut proxy, _) = build_proxy(src, &surface, segs.as_ref(), features.sharp, false, edge, src.area());
-        proxy.size = vec![3.0 * edge; proxy.p.len()];
-        proxy
-    }
+    use crate::testmesh::proxy_of;
 
     fn no_cancel() -> bool {
         false

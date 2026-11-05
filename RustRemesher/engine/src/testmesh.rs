@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Meshes for tests (compiled only for `cargo test`).
 
+use crate::bvh::{SegmentBvh, TriangleBvh};
+use crate::proxy::{build_proxy, Proxy};
 use crate::vec3::{v3, V3};
-use crate::workmesh::WorkMesh;
+use crate::workmesh::{detect_features, WorkMesh};
 use std::collections::HashMap;
 
 /// Unit icosphere with outward counter-clockwise triangles; `subdiv` = 0 is the icosahedron (20 triangles).
@@ -178,6 +180,16 @@ pub fn tube(n: usize, h: usize) -> WorkMesh {
     }
     let g = vec![0; t.len()];
     WorkMesh { p, t, group: g, color: Vec::new() }
+}
+
+/// The proxy of `src` at proxy edge `edge` (hard edges and borders as features), sizes set to three edges.
+pub fn proxy_of(src: &WorkMesh, edge: f32) -> Proxy {
+    let surface = TriangleBvh::build(src.p.clone(), src.t.clone());
+    let features = detect_features(src, false, 60f32.to_radians().cos(), &[], 3.0 * edge);
+    let segs = (!features.seg_a.is_empty()).then(|| SegmentBvh::build(features.seg_a.clone(), features.seg_b.clone()));
+    let (_b, mut proxy, _) = build_proxy(src, &surface, segs.as_ref(), features.sharp, false, edge, src.area());
+    proxy.size = vec![3.0 * edge; proxy.p.len()];
+    proxy
 }
 
 /// Signed volume (positive for outward-facing closed surfaces).
