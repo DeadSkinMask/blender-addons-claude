@@ -42,6 +42,10 @@ pub struct Proxy {
     pub sharp: Vec<u8>,
     /// Per vertex: wanted quad edge length.
     pub size: Vec<f32>,
+    /// Per vertex: the (relative) size the cross field turns with (vertex paint density); empty = none.
+    pub field_size: Vec<f32>,
+    /// Per triangle: direction the field is fixed to (a guide's tangent), zero = from its edges; empty = none.
+    pub fixed_dir: Vec<V3>,
 }
 
 impl Proxy {
@@ -80,6 +84,36 @@ impl Proxy {
         }
     }
 
+    /// Triangle shape statistics (angles in degrees, edge length relative to `edge`).
+    pub fn quality(&self, edge: f32) -> ProxyQuality {
+        let mut val = vec![0u32; self.p.len()];
+        let mut sum = 0f64;
+        let mut count = 0usize;
+        let mut min_angle = 180f32;
+        let mut thin = 0usize;
+        for tri in &self.t {
+            let q = [self.p[tri[0] as usize], self.p[tri[1] as usize], self.p[tri[2] as usize]];
+            let mut tri_min = 180f32;
+            for k in 0..3 {
+                let (a, b) = (q[(k + 1) % 3] - q[k], q[(k + 2) % 3] - q[k]);
+                tri_min = tri_min.min(a.cross(b).length().atan2(a.dot(b)).to_degrees());
+                sum += a.length() as f64;
+                count += 1;
+                val[tri[k] as usize] += 1;
+            }
+            min_angle = min_angle.min(tri_min);
+            thin += (tri_min < 20.0) as usize;
+        }
+        // every vertex of a closed mesh sees as many triangles as edges: valence = triangle count around it
+        let regular = val.iter().filter(|&&v| v == 6).count();
+        ProxyQuality {
+            mean_edge: (sum / count.max(1) as f64) as f32 / edge,
+            regular_vertices: regular as f32 / self.p.len().max(1) as f32,
+            min_angle,
+            thin_triangles: thin as f32 / self.t.len().max(1) as f32,
+        }
+    }
+
     pub fn to_mesh(&self) -> Mesh {
         Mesh {
             positions: self.p.iter().map(|v| v.to_array()).collect(),
@@ -88,6 +122,18 @@ impl Proxy {
             attrs: Attributes::default(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ProxyQuality {
+    /// Mean triangle edge over the wanted edge.
+    pub mean_edge: f32,
+    /// Share of vertices with six triangles around them (interior; borders count as irregular).
+    pub regular_vertices: f32,
+    /// Smallest triangle angle, degrees.
+    pub min_angle: f32,
+    /// Share of triangles whose smallest angle is under 20 degrees.
+    pub thin_triangles: f32,
 }
 
 fn has(t: [u32; 3], v: u32) -> bool {
@@ -295,47 +341,62 @@ impl<'a> ProxyBuilder<'a> {
         self.project_surface(p)
     }
 
-    /// Would collapsing a and b into `to` leave every triangle around `v` healthy?
-    fn collapse_ok(&self, v: u32, a: u32, b: u32, to: V3, max_len: f32) -> bool {
+    /// Would collapsing a and b into `to` leave the triangles around them healthy? Per triangle: no degenerate or
+    /// flipped result. Over the whole neighbourhood: the worst triangle may not become a needle (height under 1/50 of
+    /// the longest side) *and* worse than the worst one was, and no edge may get longer than `max_len` unless it only
+    /// replaces one about as long. Judging the neighbourhood (not each triangle) matters where the source already has
+    /// needles, such as the fans of a UV sphere's poles: every collapse there makes some triangle a bit worse, and
+    /// refusing them all would leave those regions undecimated.
+    fn collapse_ok(&self, a: u32, b: u32, to: V3, max_len: f32) -> bool {
         let max2 = max_len * max_len;
-        for &t in &self.vt[v as usize] {
-            let tri = self.t[t as usize];
-            if has(tri, a) && has(tri, b) {
-                continue;
+        let (mut worst_old, mut worst_new) = (f32::MAX, f32::MAX);
+        let (mut max_old2, mut max_new2) = (0f32, 0f32);
+        let moved = to != self.p[a as usize];
+        for v in [b, a] {
+            if v == a && !moved {
+                continue; // a stays where it is: its other triangles do not change
             }
-            let mut q = [V3::ZERO; 3];
-            for k in 0..3 {
-                q[k] = if tri[k] == a || tri[k] == b { to } else { self.p[tri[k] as usize] };
-            }
-            let n_new = (q[1] - q[0]).cross(q[2] - q[0]);
-            let n_old = self.tri_normal(tri);
-            let (ln, lo) = (n_new.length(), n_old.length());
-            if ln <= 1e-12 * (lo + 1e-30) || ln <= 0.0 {
-                return false;
-            }
-            if n_new.dot(n_old) < 0.2 * ln * lo {
-                return false;
-            }
-            for k in 0..3 {
-                if (tri[k] == a || tri[k] == b) && max_len > 0.0 {
-                    for j in 1..3 {
-                        let d = q[(k + j) % 3] - to;
-                        if d.length2() > max2 {
-                            return false;
+            for &t in &self.vt[v as usize] {
+                let tri = self.t[t as usize];
+                if has(tri, a) && has(tri, b) {
+                    continue;
+                }
+                let mut q = [V3::ZERO; 3];
+                for k in 0..3 {
+                    q[k] = if tri[k] == a || tri[k] == b { to } else { self.p[tri[k] as usize] };
+                }
+                let n_new = (q[1] - q[0]).cross(q[2] - q[0]);
+                let n_old = self.tri_normal(tri);
+                let (ln, lo) = (n_new.length(), n_old.length());
+                if ln <= 1e-12 * (lo + 1e-30) || ln <= 0.0 {
+                    return false;
+                }
+                if n_new.dot(n_old) < 0.2 * ln * lo {
+                    return false;
+                }
+                let (mut longest, mut longest_old) = (0f32, 0f32);
+                for k in 0..3 {
+                    longest = longest.max((q[(k + 1) % 3] - q[k]).length());
+                    longest_old = longest_old.max((self.p[tri[(k + 1) % 3] as usize] - self.p[tri[k] as usize]).length());
+                }
+                worst_new = worst_new.min(ln / (longest * longest).max(1e-30));
+                worst_old = worst_old.min(lo / (longest_old * longest_old).max(1e-30));
+                if max_len > 0.0 {
+                    for k in 0..3 {
+                        if tri[k] == a || tri[k] == b {
+                            for j in 1..3 {
+                                max_new2 = max_new2.max((q[(k + j) % 3] - to).length2());
+                                max_old2 = max_old2.max((self.p[tri[(k + j) % 3] as usize] - self.p[tri[k] as usize]).length2());
+                            }
                         }
                     }
                 }
             }
-            // Degenerate (needle) triangles: smallest height against the longest edge.
-            let mut longest = 0f32;
-            for k in 0..3 {
-                longest = longest.max((q[(k + 1) % 3] - q[k]).length());
-            }
-            if ln < 0.02 * longest * longest {
-                return false;
-            }
         }
-        true
+        if worst_new < 0.02 && worst_new < worst_old {
+            return false;
+        }
+        !(max_len > 0.0 && max_new2 > max2 && max_new2 > 1.21 * max_old2)
     }
 
     /// Collapses b into a, a moving to `to`. `max_len`: the longest edge the collapse may make.
@@ -363,10 +424,7 @@ impl<'a> ProxyBuilder<'a> {
         if common != ne {
             return false; // link condition: the collapse would pinch the surface
         }
-        if !self.collapse_ok(b, a, b, to, max_len) {
-            return false;
-        }
-        if to != self.p[a as usize] && !self.collapse_ok(a, a, b, to, max_len) {
+        if !self.collapse_ok(a, b, to, max_len) {
             return false;
         }
         // Do it.
@@ -1254,6 +1312,26 @@ mod tests {
         assert!(volume(&as_work(&proxy)) > 0.0);
         let worst = proxy.p.iter().map(|p| (p.length() - 1.0).abs()).fold(0f32, f32::max);
         assert!(worst < 5e-3, "vertex {worst} off the sphere");
+    }
+
+    /// Regression: on a UV sphere the fans of triangles around the poles are needles, and the collapse checks used to
+    /// judge each triangle alone, so nothing there could be decimated: 42% of the proxy's triangles were thinner than
+    /// 20 degrees and it had twice the triangles it should (70% and 3.5x with 1000 segments).
+    #[test]
+    fn needle_fans_at_the_poles_are_decimated_into_even_triangles() {
+        let src = uv_sphere(150, 600); // 178800 triangles, poles of valence 600
+        let surface = surface_of(&src);
+        let area = src.area();
+        let edge = proxy_edge(area, (area / 300.0).sqrt() as f32);
+        let (_b, proxy, _) = build_proxy(&src, &surface, None, HashSet::new(), false, edge, area);
+        let q = proxy.quality(edge);
+        let want = area / (0.433 * edge as f64 * edge as f64);
+        println!("uv sphere proxy: {} triangles (about {want:.0} wanted), {:?}", proxy.t.len(), q);
+        assert!(proxy.t.len() as f64 > 0.7 * want && (proxy.t.len() as f64) < 1.4 * want, "{} triangles, wanted about {want:.0}", proxy.t.len());
+        assert!(q.thin_triangles < 0.01, "{:.1}% thin triangles", 100.0 * q.thin_triangles);
+        assert!(q.mean_edge > 0.85 && q.mean_edge < 1.2, "mean edge {}", q.mean_edge);
+        let st = analyze(&proxy.to_mesh());
+        assert!(st.is_closed_manifold() && st.euler == 2, "{st:?}");
     }
 
     #[test]

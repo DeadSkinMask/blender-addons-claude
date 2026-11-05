@@ -4,12 +4,15 @@
 //! the next phases). `make_proxy` / `--proxy` expose the proxy for inspection.
 
 pub mod bvh;
+pub mod complex;
+pub mod field;
 pub mod io_bin;
 pub mod io_obj;
 pub mod mesh;
 pub mod progress;
 pub mod proxy;
 pub mod settings;
+pub mod solver;
 #[cfg(test)]
 mod testmesh;
 pub mod topology;
@@ -91,6 +94,29 @@ pub struct ProxyInfo {
     pub proxy_edge: f32,
     pub feature_segments: usize,
     pub hard_edges: usize,
+}
+
+/// Proxy surface plus curvature and cross field (for inspection; the layout stages come next).
+pub struct FieldReport {
+    pub proxy: Proxy,
+    pub frames: field::Frames,
+    pub curvature: field::Curvature,
+    pub field: field::CrossField,
+    pub info: ProxyInfo,
+}
+
+/// Builds the proxy, its curvature and the cross field of a validated, cleaned mesh. `cancelled` is polled by the
+/// solver; `Ok(None)` when it said stop.
+pub fn make_field(mesh: &Mesh, settings: &Settings, cancelled: &(dyn Fn() -> bool + Sync)) -> Result<Option<FieldReport>, EngineError> {
+    let (mut proxy, info) = make_proxy(mesh, settings)?;
+    // Wanted quad edge everywhere (adaptive sizes and vertex paint come later).
+    proxy.size = vec![info.quad_edge; proxy.p.len()];
+    let frames = field::Frames::build(&proxy);
+    let curvature = field::compute_curvature(&proxy, &frames, info.quad_edge);
+    let Some(cross) = field::solve_cross_field(&proxy, &frames, &curvature, &field::FieldSettings::default(), cancelled) else {
+        return Ok(None);
+    };
+    Ok(Some(FieldReport { proxy, frames, curvature, field: cross, info }))
 }
 
 /// Builds the proxy surface of a validated, cleaned mesh as the settings ask (target count, hard edges, materials).

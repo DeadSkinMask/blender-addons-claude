@@ -22,4 +22,7 @@ $exe --info "Z:$work/out.rrm" | grep -q "6 quads" || { echo "FAIL: quads lost"; 
 # the proxy stage (BVH + threads via rayon) on a closed mesh
 $exe --proxy "Z:$work/cube.rrm" "Z:$work/proxy.rrm" 200 > "$work/proxy.txt"
 grep -q "0 boundary, 0 non-manifold, 0 flipped, 1 components, euler 2" "$work/proxy.txt" || { echo "FAIL: proxy is not a closed sphere"; cat "$work/proxy.txt"; exit 1; }
+# curvature + cross field (multigrid solver, rayon): the indices of a cube's field add up to 8 = 4 x Euler characteristic
+$exe --field "Z:$work/cube.rrm" "Z:$work/field.rrm" 200 > "$work/field.txt"
+grep -q "index sum 8" "$work/field.txt" || { echo "FAIL: cross field index sum is not 8"; cat "$work/field.txt"; exit 1; }
 echo "OK: rustremesher.exe works under $WINE"

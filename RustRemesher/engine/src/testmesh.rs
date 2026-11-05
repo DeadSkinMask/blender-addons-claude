@@ -133,6 +133,53 @@ pub fn grid_cube(n: usize) -> WorkMesh {
     WorkMesh { p, t, group: g, color: Vec::new() }
 }
 
+/// Torus around the z axis (major radius `big`, minor radius `small`), outward triangles.
+pub fn torus(big: f32, small: f32, n: usize, m: usize) -> WorkMesh {
+    let mut p = Vec::new();
+    for i in 0..n {
+        let th = 2.0 * std::f32::consts::PI * i as f32 / n as f32;
+        for j in 0..m {
+            let ph = 2.0 * std::f32::consts::PI * j as f32 / m as f32;
+            let r = big + small * ph.cos();
+            p.push(v3(r * th.cos(), r * th.sin(), small * ph.sin()));
+        }
+    }
+    let id = |i: usize, j: usize| ((i % n) * m + j % m) as u32;
+    let mut t = Vec::new();
+    for i in 0..n {
+        for j in 0..m {
+            let (a, b, c, d) = (id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j + 1));
+            t.push([a, b, c]);
+            t.push([a, c, d]);
+        }
+    }
+    let g = vec![0; t.len()];
+    WorkMesh { p, t, group: g, color: Vec::new() }
+}
+
+/// Open tube around the z axis: radius 1, z in [-1, 1], `n` segments around, `h` along. Outward triangles.
+pub fn tube(n: usize, h: usize) -> WorkMesh {
+    let mut p = Vec::new();
+    for j in 0..=h {
+        let z = -1.0 + 2.0 * j as f32 / h as f32;
+        for i in 0..n {
+            let th = 2.0 * std::f32::consts::PI * i as f32 / n as f32;
+            p.push(v3(th.cos(), th.sin(), z));
+        }
+    }
+    let id = |i: usize, j: usize| (j * n + i % n) as u32;
+    let mut t = Vec::new();
+    for j in 0..h {
+        for i in 0..n {
+            let (a, b, c, d) = (id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j + 1));
+            t.push([a, b, c]);
+            t.push([a, c, d]);
+        }
+    }
+    let g = vec![0; t.len()];
+    WorkMesh { p, t, group: g, color: Vec::new() }
+}
+
 /// Signed volume (positive for outward-facing closed surfaces).
 pub fn volume(m: &WorkMesh) -> f64 {
     m.t.iter()
@@ -166,6 +213,23 @@ mod tests {
         assert!(st.is_closed_manifold() && st.euler == 2, "{st:?}");
         assert!((volume(&m) - 8.0).abs() < 1e-3);
         assert!((m.area() - 24.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn torus_is_a_closed_outward_surface_of_genus_one() {
+        let m = torus(1.0, 0.4, 40, 20);
+        let st = analyze(&m.to_mesh());
+        assert!(st.is_closed_manifold() && st.euler == 0 && st.components == 1, "{st:?}");
+        assert!(volume(&m) > 0.0);
+    }
+
+    #[test]
+    fn tube_is_open_with_two_borders() {
+        let m = tube(24, 10);
+        let st = analyze(&m.to_mesh());
+        assert_eq!(st.boundary_edges, 48);
+        assert_eq!(st.inconsistent_edges, 0);
+        assert!((m.area() - 4.0 * std::f64::consts::PI).abs() < 0.2);
     }
 
     #[test]

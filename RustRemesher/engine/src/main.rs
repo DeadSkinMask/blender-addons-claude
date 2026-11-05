@@ -14,6 +14,7 @@ USAGE:
   rustremesher --info <mesh>            print mesh statistics
   rustremesher --convert <in> <out>     convert between .obj and the binary format (debugging)
   rustremesher --proxy <in> <out> [quads]  write the proxy triangle mesh for a target quad count (debugging)
+  rustremesher --field <in> <out> [quads]  write the cross field as thin quads over the proxy (debugging)
   rustremesher --version
 
 Meshes ending in .obj are OBJ; any other extension is the binary format (FORMAT.md).";
@@ -152,8 +153,73 @@ fn cmd_proxy(input: &Path, output: &Path, quads: Option<&str>) -> u8 {
         info.source_triangles, info.area, info.quad_edge, info.proxy_edge, info.feature_segments, info.hard_edges
     );
     print_stats("proxy", &topology::analyze(&proxy.to_mesh()));
+    let q = proxy.quality(info.proxy_edge);
+    println!(
+        "quality: mean edge {:.2} x wanted, {:.0}% regular vertices, smallest angle {:.1} deg, {:.2}% triangles under 20 deg",
+        q.mean_edge, 100.0 * q.regular_vertices, q.min_angle, 100.0 * q.thin_triangles
+    );
     println!("took {:.3} s", started.elapsed().as_secs_f64());
     match write_mesh(output, &proxy.to_mesh()) {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("{}: {e}", output.display());
+            ERR_WRITE as u8
+        }
+    }
+}
+
+fn cmd_field(input: &Path, output: &Path, quads: Option<&str>) -> u8 {
+    let started = std::time::Instant::now();
+    let mut mesh = match read_mesh(input) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("{e}");
+            return ERR_READ as u8;
+        }
+    };
+    if let Err(e) = mesh.validate() {
+        eprintln!("invalid mesh: {e}");
+        return ERR_MESH as u8;
+    }
+    mesh.clean();
+    let mut settings = Settings::default();
+    if let Some(q) = quads {
+        match q.parse::<u32>() {
+            Ok(n) if n >= 1 => settings.target_quad_count = n,
+            _ => {
+                eprintln!("quads must be a whole number >= 1");
+                return ERR_SETTINGS as u8;
+            }
+        }
+    }
+    let report = match rustremesher::make_field(&mesh, &settings, &|| false) {
+        Ok(Some(r)) => r,
+        Ok(None) => return ERR_INTERNAL as u8,
+        Err(e) => {
+            eprintln!("error: {}", e.message);
+            return e.code as u8;
+        }
+    };
+    let f = &report.field;
+    let (plus, minus) = (
+        f.vertex_index.iter().filter(|&&q| q > 0).count(),
+        f.vertex_index.iter().filter(|&&q| q < 0).count(),
+    );
+    println!(
+        "proxy {} triangles; cross field: {} singularities ({plus} positive, {minus} negative), index sum {}",
+        report.proxy.triangles(),
+        f.singularities,
+        f.vertex_index.iter().map(|&q| q as i32).sum::<i32>()
+    );
+    let q = report.proxy.quality(report.info.proxy_edge);
+    println!(
+        "proxy quality: mean edge {:.2} x wanted, {:.0}% regular vertices, smallest angle {:.1} deg, {:.2}% triangles under 20 deg",
+        q.mean_edge, 100.0 * q.regular_vertices, q.min_angle, 100.0 * q.thin_triangles
+    );
+    println!("took {:.3} s", started.elapsed().as_secs_f64());
+    let edge = report.info.proxy_edge;
+    let debug = rustremesher::field::field_debug_mesh(&report.proxy, &report.frames, &report.field, 0.4 * edge, 0.04 * edge);
+    match write_mesh(output, &debug) {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("{}: {e}", output.display());
@@ -170,6 +236,8 @@ fn main() -> ExitCode {
         ["--convert", a, b] => cmd_convert(Path::new(a), Path::new(b)),
         ["--proxy", a, b] => cmd_proxy(Path::new(a), Path::new(b), None),
         ["--proxy", a, b, q] => cmd_proxy(Path::new(a), Path::new(b), Some(q)),
+        ["--field", a, b] => cmd_field(Path::new(a), Path::new(b), None),
+        ["--field", a, b, q] => cmd_field(Path::new(a), Path::new(b), Some(q)),
         ["--version"] => {
             println!("rustremesher {}", rustremesher::VERSION);
             0

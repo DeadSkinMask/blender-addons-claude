@@ -11,6 +11,7 @@ estos formatos se hace en el engine (`engine/src/`) y en el addon a la vez.
 | `rustremesher --info <malla>` | Estadísticas de una malla |
 | `rustremesher --convert <in> <out>` | Convierte `.obj` ↔ binario (depuración). Hacia binario escribe `RRMI0001` |
 | `rustremesher --proxy <in> <out> [quads]` | Escribe la malla proxy (triángulos) para un objetivo de cuads (depuración de la fase 2). `RR_TIMING=1` imprime tiempos por fase |
+| `rustremesher --field <in> <out> [quads]` | Escribe el campo cruzado como quads finos sobre el proxy y muestra singularidades y calidad del proxy (depuración de la fase 3) |
 | `rustremesher --version` | Versión |
 
 Una malla con extensión `.obj` es OBJ; cualquier otra extensión es el binario. El engine no tiene licencias ni
