@@ -201,7 +201,9 @@ pub fn remesh_mesh(
     settings: &Settings,
     progress: &(dyn Fn(f32, &str) -> bool + Sync),
 ) -> Result<Option<RemeshResult>, EngineError> {
-    let work = WorkMesh::from_mesh(mesh, settings.use_material_ids, settings.use_vertex_color_map);
+    // groups are read whenever the input has materials (they are carried to the output); `keep_groups` decides whether
+    // their borders guide the loops
+    let work = WorkMesh::from_mesh(mesh, mesh.attrs.materials.is_some(), settings.use_vertex_color_map);
     let pieces = remesh::split_components(&work);
     let areas: Vec<f64> = pieces.iter().map(|c| c.mesh.area()).collect();
     let total_area: f64 = areas.iter().sum();
@@ -210,6 +212,7 @@ pub fn remesh_mesh(
     }
     let n = pieces.len();
     let mut out = Mesh::default();
+    let mut materials: Vec<u32> = Vec::new();
     let mut reports = Vec::with_capacity(n);
     for (i, c) in pieces.iter().enumerate() {
         let want = (settings.target_quad_count as f64 * areas[i] / total_area).max(MIN_PIECE_QUADS);
@@ -219,6 +222,10 @@ pub fn remesh_mesh(
             detect_edges: settings.auto_detect_hard_edges,
             user_sharp: remesh::sharp_for_component(c, &mesh.attrs.sharp_edges),
             smooth_iterations: 6,
+            adaptivness: settings.curvature_adaptivness,
+            use_colors: settings.use_vertex_color_map,
+            guide_strength: settings.guide_strength,
+            guides: mesh.attrs.guides.iter().map(|g| (g.closed, g.points.iter().map(|&p| V3::from_array(p)).collect())).collect(),
         };
         let label = if n > 1 { format!("Remeshing piece {} of {}", i + 1, n) } else { "Remeshing".to_string() };
         // this piece owns the progress range [lo, hi]; a negative value only asks whether to go on
@@ -245,6 +252,7 @@ pub fn remesh_mesh(
                     out.face_sizes.push(3);
                     out.indices.extend(t.iter().map(|v| v + base));
                 }
+                materials.extend_from_slice(&r.groups);
                 rep.quads = r.mesh.quads.len();
                 rep.triangles = r.mesh.tris.len();
                 rep.singularities = r.singularities;
@@ -254,15 +262,19 @@ pub fn remesh_mesh(
             Err(PieceError::Failed(why)) => {
                 // keep the piece as it was rather than lose it
                 out.positions.extend(c.mesh.p.iter().map(|v| v.to_array()));
-                for t in &c.mesh.t {
+                for (ti, t) in c.mesh.t.iter().enumerate() {
                     out.face_sizes.push(3);
                     out.indices.extend(t.iter().map(|v| v + base));
+                    materials.push(c.mesh.group.get(ti).copied().unwrap_or(0));
                 }
                 rep.triangles = c.mesh.t.len();
                 rep.error = Some(why);
             }
         }
         reports.push(rep);
+    }
+    if mesh.attrs.materials.is_some() {
+        out.attrs.materials = Some(materials);
     }
     Ok(Some(RemeshResult { mesh: out, pieces: reports }))
 }
