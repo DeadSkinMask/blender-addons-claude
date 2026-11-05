@@ -31,15 +31,15 @@ Las claves son las que escribe el puente de Quad Remesher; las desconocidas se i
 | `FileIn`, `FileOut` | obligatorias | Rutas |
 | `ProgressFile` | ninguno | Si falta no se escribe progreso |
 | `TargetQuadCount` | 5000 | ≥ 1 |
-| `CurvatureAdaptivness` | 50 | 0–100, 0 = cuads uniformes |
+| `CurvatureAdaptivness` | 50 | 0–100, 0 = cuads uniformes. A 100 los tamaños varían entre ~0,4 y ~1,6 del medio: más pequeños donde la superficie se curva |
 | `ExactQuadCount` | 0 | 1 = respetar el objetivo con más exactitud |
-| `UseVertexColorMap` | 0 | Colores de vértice como densidad |
-| `UseMaterialIds` | 0 | Bordes de material guían los loops |
-| `UseIndexedNormals` | 0 | Normales divididas guían los loops |
+| `UseVertexColorMap` | 0 | Colores de vértice como densidad: la luminancia manda, gris medio (0,5) = neutro, blanco = cuads 3 veces más pequeños, negro = 3 veces más grandes |
+| `UseMaterialIds` | 0 | Bordes de material guían los loops. Si la entrada trae `MATL`, la salida lo trae también (material de la cara de entrada bajo cada cuad), con o sin este ajuste |
+| `UseIndexedNormals` | 0 | Lo resuelve el addon: marca como bordes duros (`SHRP`) las aristas con normales divididas. El engine no lo lee |
 | `AutoDetectHardEdges` | 1 | Detecta bordes duros por ángulo |
-| `SymAxis` | ninguno | Combinación de `X`, `Y`, `Z` |
-| `SymLocal` | 1 | Simetría en espacio local |
-| `GuideStrength` | 50 | 0–100, alcance de las guías de curva |
+| `SymAxis` | ninguno | Combinación de `X`, `Y`, `Z`. Se recorta la malla por el plano `coordenada = 0` del espacio local, se remalla el lado positivo (con `TargetQuadCount / 2` por eje) y se refleja soldando los vértices del plano. Se supone la entrada simétrica: lo que haya en el lado negativo se sustituye por el reflejo |
+| `SymLocal` | 1 | El engine siempre usa el espacio local (el de las posiciones que recibe); para simetría en espacio global el addon debe enviar las posiciones ya transformadas |
+| `GuideStrength` | 50 | 0–100: hasta dónde tira una guía, unas `1 + 3·fuerza/100` aristas de cuad a cada lado. Las guías son suaves: el campo se alinea con su tangente y un loop las sigue, sin quedar forzado exactamente sobre ellas. Con simetría se añade el reflejo de cada guía |
 | `Threads` | 0 | 0 = todos los hilos |
 
 ## Progreso (`ProgressFile`)

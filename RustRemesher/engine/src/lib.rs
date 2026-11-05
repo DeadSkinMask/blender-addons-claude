@@ -22,6 +22,7 @@ pub mod relax;
 pub mod remesh;
 pub mod settings;
 pub mod solver;
+pub mod symmetry;
 #[cfg(test)]
 mod testmesh;
 pub mod topology;
@@ -204,6 +205,30 @@ pub fn remesh_mesh(
     // groups are read whenever the input has materials (they are carried to the output); `keep_groups` decides whether
     // their borders guide the loops
     let work = WorkMesh::from_mesh(mesh, mesh.attrs.materials.is_some(), settings.use_vertex_color_map);
+    // Symmetry: the positive side of each axis is remeshed (with `target / 2` quads per axis) and reflected at the end.
+    let axes: Vec<usize> = (0..3).filter(|&a| settings.sym_axis[a]).collect();
+    let mut work = work;
+    let mut guides: Vec<(bool, Vec<V3>)> =
+        mesh.attrs.guides.iter().map(|g| (g.closed, g.points.iter().map(|&p| V3::from_array(p)).collect())).collect();
+    let full_area = work.area();
+    if !axes.is_empty() {
+        let (mut lo, mut hi) = (V3::from_array([f32::MAX; 3]), V3::from_array([f32::MIN; 3]));
+        for p in &work.p {
+            lo = V3 { x: lo.x.min(p.x), y: lo.y.min(p.y), z: lo.z.min(p.z) };
+            hi = V3 { x: hi.x.max(p.x), y: hi.y.max(p.y), z: hi.z.max(p.z) };
+        }
+        let tol = (hi - lo).length() * 1e-5;
+        for &a in &axes {
+            work = symmetry::clip_half(&work, a, tol);
+            // a guide drawn on one side steers both: add its reflection (the half that lacks it drops it)
+            let mirrored: Vec<(bool, Vec<V3>)> = guides.iter().map(|(c, pts)| (*c, pts.iter().map(|&p| symmetry::reflect(p, a)).collect())).collect();
+            guides.extend(mirrored);
+        }
+        if work.t.is_empty() {
+            return Err(EngineError::new(ERR_MESH, "Nothing of the mesh lies on the positive side of the symmetry plane"));
+        }
+    }
+    let target = settings.target_quad_count as f64 / (1u64 << axes.len()) as f64;
     let pieces = remesh::split_components(&work);
     let areas: Vec<f64> = pieces.iter().map(|c| c.mesh.area()).collect();
     let total_area: f64 = areas.iter().sum();
@@ -215,7 +240,7 @@ pub fn remesh_mesh(
     let mut materials: Vec<u32> = Vec::new();
     let mut reports = Vec::with_capacity(n);
     for (i, c) in pieces.iter().enumerate() {
-        let want = (settings.target_quad_count as f64 * areas[i] / total_area).max(MIN_PIECE_QUADS);
+        let want = (target * areas[i] / total_area).max(MIN_PIECE_QUADS);
         let opt = PieceOptions {
             want_quads: want,
             keep_groups: settings.use_material_ids,
@@ -225,7 +250,7 @@ pub fn remesh_mesh(
             adaptivness: settings.curvature_adaptivness,
             use_colors: settings.use_vertex_color_map,
             guide_strength: settings.guide_strength,
-            guides: mesh.attrs.guides.iter().map(|g| (g.closed, g.points.iter().map(|&p| V3::from_array(p)).collect())).collect(),
+            guides: guides.clone(),
         };
         let label = if n > 1 { format!("Remeshing piece {} of {}", i + 1, n) } else { "Remeshing".to_string() };
         // this piece owns the progress range [lo, hi]; a negative value only asks whether to go on
@@ -272,6 +297,13 @@ pub fn remesh_mesh(
             }
         }
         reports.push(rep);
+    }
+    if !axes.is_empty() {
+        // quad edge of the whole mesh, to weld what lies within a twentieth of it of a plane
+        let eps = 0.05 * (full_area / settings.target_quad_count as f64).sqrt() as f32;
+        for &a in &axes {
+            symmetry::mirror_weld(&mut out, &mut materials, a, eps);
+        }
     }
     if mesh.attrs.materials.is_some() {
         out.attrs.materials = Some(materials);
