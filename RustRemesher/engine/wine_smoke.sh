@@ -19,4 +19,7 @@ $exe -s "Z:$work/s.txt"
 [ "$(cat "$work/progress.txt")" = "2" ] || { echo "FAIL: progress is not 2"; exit 1; }
 [ "$(head -c 8 "$work/out.rrm")" = "RRMO0001" ] || { echo "FAIL: bad output"; exit 1; }
 $exe --info "Z:$work/out.rrm" | grep -q "6 quads" || { echo "FAIL: quads lost"; exit 1; }
+# the proxy stage (BVH + threads via rayon) on a closed mesh
+$exe --proxy "Z:$work/cube.rrm" "Z:$work/proxy.rrm" 200 > "$work/proxy.txt"
+grep -q "0 boundary, 0 non-manifold, 0 flipped, 1 components, euler 2" "$work/proxy.txt" || { echo "FAIL: proxy is not a closed sphere"; cat "$work/proxy.txt"; exit 1; }
 echo "OK: rustremesher.exe works under $WINE"

@@ -113,3 +113,61 @@ fn usage_on_bad_arguments() {
     let v = exe().arg("--version").output().unwrap();
     assert!(String::from_utf8_lossy(&v.stdout).starts_with("rustremesher "));
 }
+
+#[test]
+fn proxy_command_writes_a_closed_triangle_mesh() {
+    // a subdivided cube given as quads: 12 hard edges must be detected and the result stays a closed sphere
+    let dir = workdir("proxy");
+    let n = 12usize;
+    let faces: [([f32; 3], [f32; 3], [f32; 3]); 6] = [
+        ([1., -1., -1.], [0., 1., 0.], [0., 0., 1.]),
+        ([-1., -1., -1.], [0., 0., 1.], [0., 1., 0.]),
+        ([-1., 1., -1.], [0., 0., 1.], [1., 0., 0.]),
+        ([-1., -1., -1.], [1., 0., 0.], [0., 0., 1.]),
+        ([-1., -1., 1.], [1., 0., 0.], [0., 1., 0.]),
+        ([-1., -1., -1.], [0., 1., 0.], [1., 0., 0.]),
+    ];
+    let mut m = Mesh::default();
+    let mut weld = std::collections::HashMap::new();
+    let step = 2.0 / n as f32;
+    for (o, u, v) in faces {
+        let mut vid = |i: usize, j: usize| -> u32 {
+            let q = [0, 1, 2].map(|k| o[k] + u[k] * step * i as f32 + v[k] * step * j as f32);
+            let key = q.map(|c| (c * 1000.0).round() as i32);
+            *weld.entry(key).or_insert_with(|| {
+                m.positions.push(q);
+                m.positions.len() as u32 - 1
+            })
+        };
+        for j in 0..n {
+            for i in 0..n {
+                let quad = [vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)];
+                m.face_sizes.push(4);
+                m.indices.extend_from_slice(&quad);
+            }
+        }
+    }
+    let input = dir.join("cube.rrm");
+    io_bin::write_file(&input, &m, MAGIC_IN).unwrap();
+    let out_path = dir.join("proxy.rrm");
+    let out = exe().arg("--proxy").arg(&input).arg(&out_path).arg("300").output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(out.status.success(), "{text}{}", String::from_utf8_lossy(&out.stderr));
+    assert!(text.contains("144 hard edges"), "{text}"); // 12 cube edges x 12 segments
+    let proxy = io_bin::read_file(&out_path).unwrap();
+    assert!(proxy.face_sizes.iter().all(|&s| s == 3));
+    let st = rustremesher::topology::analyze(&proxy);
+    assert!(st.is_closed_manifold() && st.euler == 2, "{st:?}");
+    // about area / (0.433 edge^2) triangles, edge = sqrt(area / quads) / 3 (here the proxy is finer than the input)
+    let want = 24.0 / (0.433 * (f64::sqrt(24.0 / 300.0) / 3.0).powi(2));
+    let got = proxy.face_count() as f64;
+    assert!(got > 0.5 * want && got < 2.0 * want, "{got} triangles, wanted about {want:.0}");
+}
+
+#[test]
+fn proxy_command_rejects_a_bad_quad_count() {
+    let dir = workdir("proxybad");
+    let input = dir.join("cube.rrm");
+    io_bin::write_file(&input, &cube(), MAGIC_IN).unwrap();
+    assert_eq!(exe().arg("--proxy").arg(&input).arg(dir.join("o.rrm")).arg("abc").status().unwrap().code(), Some(1));
+}
