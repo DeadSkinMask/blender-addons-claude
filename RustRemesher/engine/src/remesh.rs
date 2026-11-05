@@ -165,6 +165,17 @@ const DENSITIES: [f32; 3] = [3.0, 2.5, 3.2];
 /// few poles (at most 1.5 x the field's singularities + 4) is taken at once; otherwise the manifold result with the
 /// fewest poles (then the smallest angle error) wins. `progress` gets values in 0..1 and returns false to cancel.
 pub fn remesh_piece(piece: &WorkMesh, opt: &PieceOptions, progress: &(dyn Fn(f32) -> bool + Sync)) -> Result<PieceResult, PieceError> {
+    // A source much coarser than the quads asked for is facets, not a surface: round it off first (subdiv.rs).
+    let area = piece.area();
+    let quad_edge = if area > 0.0 && opt.want_quads >= 1.0 { (area / opt.want_quads).sqrt() as f32 } else { 0.0 };
+    if let Some(up) = crate::subdiv::upsample(piece, &opt.user_sharp, 0.6 * quad_edge, 40f32.to_radians().cos(), 12, 1_500_000) {
+        let opt = PieceOptions { user_sharp: up.sharp, ..opt.clone() };
+        return remesh_densities(&up.mesh, &opt, progress);
+    }
+    remesh_densities(piece, opt, progress)
+}
+
+fn remesh_densities(piece: &WorkMesh, opt: &PieceOptions, progress: &(dyn Fn(f32) -> bool + Sync)) -> Result<PieceResult, PieceError> {
     let mut last = String::from("no result");
     let mut best: Option<(usize, f32, PieceResult)> = None;
     for (i, density) in DENSITIES.into_iter().enumerate() {
@@ -230,13 +241,20 @@ fn guide_segments(surface: &TriangleBvh, guides: &[(bool, Vec<V3>)], h0: f32) ->
     (sa, sb)
 }
 
+/// `RR_TIMING=1` prints how long each stage of a piece took (stderr).
+fn stage(t0: &std::time::Instant, name: &str) {
+    if std::env::var_os("RR_TIMING").is_some() {
+        eprintln!("    stage {name:<12} at {:.2} s", t0.elapsed().as_secs_f64());
+    }
+}
+
 fn smoothstep(a: f64, b: f64, x: f64) -> f64 {
     let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
 
 /// Relative wanted quad size per proxy vertex (geometric mean 1). Smaller where the surface bends and larger where it
-/// is flat (`adaptivness`: at 100 the sizes span about 0.4 to 1.6 of the average) and smaller where the vertex paint
+/// is flat (`adaptivness`: at 100 the sizes span about 0.5 to 1.5 of the average) and smaller where the vertex paint
 /// is bright (a factor 3 each way at white / black). Then limited so neighbours differ by at most 35% per quad edge
 /// and smoothed, since the map follows the size's gradient.
 fn relative_sizes(proxy: &Proxy, frames: &Frames, curv: &crate::field::Curvature, piece: &WorkMesh, surface: &TriangleBvh, opt: &PieceOptions, h0: f32) -> Vec<f32> {
@@ -254,7 +272,7 @@ fn relative_sizes(proxy: &Proxy, frames: &Frames, curv: &crate::field::Curvature
         }
         for v in 0..nv {
             let rel = if w[v] > 0.0 { sum[v] / w[v] * h0 as f64 } else { 0.0 };
-            lg[v] += (1.0 + 1.2 * a * (0.5 - smoothstep(0.04, 0.5, rel))).ln();
+            lg[v] += (1.0 + 1.0 * a * (0.5 - smoothstep(0.04, 0.5, rel))).ln();
         }
     }
     if opt.use_colors && !piece.color.is_empty() {
@@ -295,7 +313,7 @@ fn relative_sizes(proxy: &Proxy, frames: &Frames, curv: &crate::field::Curvature
             break;
         }
     }
-    for _ in 0..16 {
+    for _ in 0..64 {
         let (mut sum, mut n) = (vec![0f64; nv], vec![0f64; nv]);
         for &(x, y, _) in &edges {
             sum[x as usize] += lg[y as usize];
@@ -326,6 +344,7 @@ fn size_base(proxy: &Proxy, frames: &Frames, rel: &[f32], want: f64) -> f64 {
 fn remesh_piece_once(piece: &WorkMesh, opt: &PieceOptions, density: f32, progress: &(dyn Fn(f32) -> bool + Sync)) -> Result<PieceResult, PieceError> {
     let step = |f: f32| if progress(f) { Ok(()) } else { Err(PieceError::Cancelled) };
     let cancelled = || !progress(-1.0); // a poll: -1 asks only whether to stop
+    let t0 = std::time::Instant::now();
     if piece.t.is_empty() {
         return fail("empty piece");
     }
@@ -379,6 +398,7 @@ fn remesh_piece_once(piece: &WorkMesh, opt: &PieceOptions, density: f32, progres
     };
     step(0.25)?;
     step(0.35)?;
+    stage(&t0, "proxy");
 
     // Sizes: normalised so the proxy's own area holds the wanted number of quads, with `scale` for the smoothed copy
     // the map is solved on. The cross field turns with the size's gradient (`field_size`).
@@ -464,6 +484,7 @@ fn remesh_piece_once(piece: &WorkMesh, opt: &PieceOptions, density: f32, progres
     };
     let singularities = field.singularities;
     step(0.55)?;
+    stage(&t0, "field");
 
     // 4 + 5. Map and extraction; the count is corrected once when it is far off.
     let proxy_bvh = TriangleBvh::build(proxy.p.clone(), proxy.t.clone());
@@ -494,6 +515,7 @@ fn remesh_piece_once(piece: &WorkMesh, opt: &PieceOptions, density: f32, progres
         }
         flipped = map.flipped;
         attempts = attempt + 1;
+        stage(&t0, "map");
         let mut poly = extract_lattice(&proxy, &frames, &map, h0);
         tris.clear();
         quads = all_quads(&mut poly, &mut tris);
@@ -506,6 +528,7 @@ fn remesh_piece_once(piece: &WorkMesh, opt: &PieceOptions, density: f32, progres
             repair_manifold(&mut qp, &mut quads, &mut tris);
             clean_quads(&mut qp, &mut quads, &mut tris);
         }
+        stage(&t0, "extract");
         let ratio = quads.len() as f64 / opt.want_quads;
         if quads.is_empty() || attempt == 1 || (ratio - 1.0).abs() < 0.12 {
             break;
@@ -530,6 +553,7 @@ fn remesh_piece_once(piece: &WorkMesh, opt: &PieceOptions, density: f32, progres
     let feat = relax_loops(&mut qp, &quads, &rt, opt.smooth_iterations);
     untangle(&mut qp, &quads, &feat, &surface, h0);
     step(0.95)?;
+    stage(&t0, "relax");
     // The source group (material) under each face's centre.
     let group_at = |c: V3| surface.closest_point(c, 4.0 * h0).map_or(0, |h| piece.group.get(h.prim as usize).copied().unwrap_or(0));
     let mut groups: Vec<u32> = Vec::with_capacity(quads.len() + tris.len());
@@ -845,7 +869,7 @@ mod tests {
         let (b1, f1) = density(100.0);
         println!("bend/flat quads: uniform {b0}/{f0}, adaptive {b1}/{f1}");
         // the strip is as long on both halves, so uniform gives about the same count on both; adaptive favours the bend
-        assert!((b1 / f1) > 1.3 * (b0 / f0), "uniform {}, adaptive {}", b0 / f0, b1 / f1);
+        assert!((b1 / f1) > 1.25 * (b0 / f0), "uniform {}, adaptive {}", b0 / f0, b1 / f1);
     }
 
     #[test]
@@ -902,6 +926,22 @@ mod tests {
         let (plain, guided) = (aligned(vec![]), aligned(vec![(true, circle)]));
         println!("guides: edges along/across the circle {plain:.2} without, {guided:.2} with");
         assert!(guided > plain + 0.15 && guided > 0.7, "without {plain}, with {guided}");
+    }
+
+    /// Regression: a low-poly source (80 triangles) asked for hundreds of quads used to come out as noise (the flat
+    /// facets read as creases); it is rounded off first, so the result is a clean sphere, not a faceted one.
+    #[test]
+    fn a_low_poly_sphere_remeshes_clean_and_round() {
+        let src = icosphere(1);
+        let r = remesh(&src, 500.0);
+        let st = analyze(&to_mesh(&r));
+        assert!(st.is_closed_manifold() && st.euler == 2 && st.components == 1, "{st:?}");
+        assert!(r.mesh.tris.is_empty());
+        let q = quad_quality(&r.mesh);
+        assert!(q.poles <= 14, "{} poles", q.poles);
+        // vertices lie on the unit sphere itself (the facets of the source are up to 0.07 inside it)
+        let worst = r.mesh.p.iter().map(|p| (p.length() - 1.0).abs()).fold(0f32, f32::max);
+        assert!(worst < 0.03, "worst radius error {worst}");
     }
 
     #[test]

@@ -30,6 +30,11 @@ def find_engine(configured=""):
         return path
     bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", EXE)
     if os.path.isfile(bundled):
+        if not os.access(bundled, os.X_OK):
+            try:  # unzipping an extension can drop the executable bit
+                os.chmod(bundled, 0o755)
+            except OSError:
+                pass
         return bundled
     found = shutil.which(EXE)
     if found:

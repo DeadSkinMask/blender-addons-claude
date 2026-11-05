@@ -316,6 +316,82 @@ def t_guides_steer_the_edge_flow():
     assert mod.guides.guide_collection() is None
 
 
+def edge_use_counts(me):
+    count = np.zeros(len(me.edges), dtype=np.int32)
+    ce = np.empty(len(me.loops), dtype=np.int32)
+    me.loops.foreach_get("edge_index", ce)
+    np.add.at(count, ce, 1)
+    return count
+
+
+def components(me):
+    parent = list(range(len(me.vertices)))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    ev = np.empty(len(me.edges) * 2, dtype=np.int32)
+    me.edges.foreach_get("vertices", ev)
+    for a, b in ev.reshape(-1, 2):
+        parent[find(a)] = find(b)
+    used = set(int(v) for v in np.unique(ev))
+    return len({find(v) for v in used})
+
+
+def t_suzanne_low_poly():
+    clean_scene()
+    bpy.ops.mesh.primitive_monkey_add()
+    src = bpy.context.object
+    s = settings()
+    s.target_quads = 1500
+    new = remesh()
+    me = new.data
+    assert faces_all_quads(me), "triangles left over"
+    assert abs(len(me.polygons) / 1500 - 1) < 0.2, len(me.polygons)
+    assert edge_use_counts(me).max() <= 2, "non-manifold edges"
+    lo, hi = coords(src.data).min(axis=0), coords(src.data).max(axis=0)
+    out = coords(me)
+    pad = 0.05 * (hi - lo)
+    assert (out.min(axis=0) >= lo - pad).all() and (out.max(axis=0) <= hi + pad).all(), "the result leaves the source's bounding box"
+
+
+def t_two_pieces_stay_two_pieces():
+    clean_scene()
+    a = add_sphere(32, 16)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=16, location=(3.0, 0.0, 0.0), radius=0.5)
+    b = bpy.context.object
+    bpy.ops.object.select_all(action='DESELECT')
+    a.select_set(True)
+    b.select_set(True)
+    bpy.context.view_layer.objects.active = a
+    bpy.ops.object.join()
+    assert components(a.data) == 2
+    s = settings()
+    s.target_quads = 800
+    new = remesh()
+    assert components(new.data) == 2 and faces_all_quads(new.data) and boundary_edges(new.data) == 0
+
+
+def t_ngons_and_loose_geometry():
+    clean_scene()
+    bpy.ops.mesh.primitive_cylinder_add(vertices=32)  # two 32-gon caps
+    obj = bpy.context.object
+    me = obj.data
+    me.vertices.add(2)
+    me.vertices[-2].co = (5, 5, 5)
+    me.vertices[-1].co = (6, 5, 5)
+    me.edges.add(1)
+    me.edges[-1].vertices = (len(me.vertices) - 2, len(me.vertices) - 1)
+    me.update()
+    s = settings()
+    s.target_quads = 600
+    new = remesh()
+    assert faces_all_quads(new.data) and boundary_edges(new.data) == 0
+    assert np.abs(coords(new.data)).max() < 2.0, "the loose geometry came along"
+
+
 def t_cancel_stops_the_engine_and_cleans_up():
     clean_scene()
     src = add_sphere(400, 200)
@@ -383,6 +459,9 @@ for name, fn in [
     ("vertex_colors_set_density", t_vertex_colors_set_density),
     ("guides_are_collected_in_local_space", t_guides_are_collected_in_local_space),
     ("guides_steer_the_edge_flow", t_guides_steer_the_edge_flow),
+    ("suzanne_low_poly", t_suzanne_low_poly),
+    ("two_pieces_stay_two_pieces", t_two_pieces_stay_two_pieces),
+    ("ngons_and_loose_geometry", t_ngons_and_loose_geometry),
     ("cancel_stops_the_engine_and_cleans_up", t_cancel_stops_the_engine_and_cleans_up),
     ("engine_failure_is_reported", t_engine_failure_is_reported),
     ("threads_preference_reaches_the_engine", t_threads_preference_reaches_the_engine),

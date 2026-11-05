@@ -31,7 +31,7 @@ Las claves son las que escribe el puente de Quad Remesher; las desconocidas se i
 | `FileIn`, `FileOut` | obligatorias | Rutas |
 | `ProgressFile` | ninguno | Si falta no se escribe progreso |
 | `TargetQuadCount` | 5000 | ≥ 1 |
-| `CurvatureAdaptivness` | 50 | 0–100, 0 = cuads uniformes. A 100 los tamaños varían entre ~0,4 y ~1,6 del medio: más pequeños donde la superficie se curva |
+| `CurvatureAdaptivness` | 50 | 0–100, 0 = cuads uniformes. A 100 los tamaños varían entre ~0,5 y ~1,5 del medio: más pequeños donde la superficie se curva |
 | `ExactQuadCount` | 0 | 1 = respetar el objetivo con más exactitud |
 | `UseVertexColorMap` | 0 | Colores de vértice como densidad: la luminancia manda, gris medio (0,5) = neutro, blanco = cuads 3 veces más pequeños, negro = 3 veces más grandes |
 | `UseMaterialIds` | 0 | Bordes de material guían los loops. Si la entrada trae `MATL`, la salida lo trae también (material de la cara de entrada bajo cada cuad), con o sin este ajuste |

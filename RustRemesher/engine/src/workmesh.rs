@@ -32,7 +32,8 @@ impl WorkMesh {
     /// Triangulates the polygons (quads along their shorter diagonal, larger n-gons as a fan). Vertex numbers are
     /// the mesh's, so hard-edge vertex pairs stay valid. Expects a validated mesh.
     pub fn from_mesh(mesh: &Mesh, use_materials: bool, use_colors: bool) -> WorkMesh {
-        let p: Vec<V3> = mesh.positions.iter().map(|&a| V3::from_array(a)).collect();
+        let mut p: Vec<V3> = mesh.positions.iter().map(|&a| V3::from_array(a)).collect();
+        let mut extra_colors: Vec<V3> = Vec::new(); // colors of the centre vertices added to big polygons
         let mut t = Vec::with_capacity(mesh.indices.len());
         let mut group = Vec::with_capacity(mesh.indices.len());
         let mats = if use_materials { mesh.attrs.materials.as_ref() } else { None };
@@ -57,15 +58,30 @@ impl WorkMesh {
                     group.push(g);
                 }
                 n => {
-                    for k in 1..n - 1 {
-                        t.push([f[0], f[k], f[k + 1]]);
-                        group.push(g);
+                    // A star from the centre keeps the triangles fat (a fan from one corner of a 64-gon gives slivers),
+                    // when the polygon is convex enough for that; otherwise the fan.
+                    let centre = f.iter().fold(V3::ZERO, |a, &v| a + p[v as usize]) / n as f32;
+                    let normal = (1..n - 1).fold(V3::ZERO, |a, k| a + (p[f[k] as usize] - p[f[0] as usize]).cross(p[f[k + 1] as usize] - p[f[0] as usize]));
+                    let star = n >= 5 && (0..n).all(|k| (p[f[k] as usize] - centre).cross(p[f[(k + 1) % n] as usize] - centre).dot(normal) > 0.0);
+                    if star {
+                        let c = p.len() as u32;
+                        p.push(centre);
+                        extra_colors.push(f.iter().fold(V3::ZERO, |a, &v| a + mesh.attrs.colors.as_ref().map_or(V3::ZERO, |c| V3::from_array(c[v as usize]))) / n as f32);
+                        for k in 0..n {
+                            t.push([f[k], f[(k + 1) % n], c]);
+                            group.push(g);
+                        }
+                    } else {
+                        for k in 1..n - 1 {
+                            t.push([f[0], f[k], f[k + 1]]);
+                            group.push(g);
+                        }
                     }
                 }
             }
         }
         let color = if use_colors {
-            mesh.attrs.colors.as_ref().map_or_else(Vec::new, |c| c.iter().map(|&a| V3::from_array(a)).collect())
+            mesh.attrs.colors.as_ref().map_or_else(Vec::new, |c| c.iter().map(|&a| V3::from_array(a)).chain(extra_colors.iter().copied()).collect())
         } else {
             Vec::new()
         };
@@ -247,18 +263,34 @@ mod tests {
     }
 
     #[test]
-    fn ngons_are_fanned_and_groups_follow_materials() {
+    fn convex_ngons_become_a_star_and_groups_follow_materials() {
         let m = Mesh {
             positions: vec![[0., 0., 0.], [1., 0., 0.], [2., 1., 0.], [1., 2., 0.], [0., 1., 0.]],
             face_sizes: vec![5],
             indices: vec![0, 1, 2, 3, 4],
-            attrs: Attributes { materials: Some(vec![7]), ..Default::default() },
+            attrs: Attributes { materials: Some(vec![7]), colors: Some(vec![[1.0; 3]; 5]), ..Default::default() },
         };
-        let w = WorkMesh::from_mesh(&m, true, false);
-        assert_eq!(w.t.len(), 3);
-        assert_eq!(w.group, vec![7, 7, 7]);
+        let w = WorkMesh::from_mesh(&m, true, true);
+        assert_eq!(w.t.len(), 5, "a star of five triangles");
+        assert_eq!(w.p.len(), 6, "with a centre vertex appended");
+        assert_eq!(w.color.len(), 6, "and a color for it");
+        assert_eq!(w.group, vec![7; 5]);
         assert!((w.area() - 2.5).abs() < 1e-5);
         assert!(WorkMesh::from_mesh(&m, false, false).group.iter().all(|&g| g == 0));
+    }
+
+    #[test]
+    fn concave_ngons_are_fanned() {
+        // an arrow head: the centre would see the notch from outside
+        let m = Mesh {
+            positions: vec![[0., 0., 0.], [4., 0., 0.], [4., 4., 0.], [2., 1., 0.], [0., 4., 0.]],
+            face_sizes: vec![5],
+            indices: vec![0, 1, 2, 3, 4],
+            attrs: Attributes::default(),
+        };
+        let w = WorkMesh::from_mesh(&m, false, false);
+        assert_eq!(w.t.len(), 3);
+        assert_eq!(w.p.len(), 5);
     }
 
     #[test]

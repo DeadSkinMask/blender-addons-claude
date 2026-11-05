@@ -22,6 +22,7 @@ pub mod relax;
 pub mod remesh;
 pub mod settings;
 pub mod solver;
+pub mod subdiv;
 pub mod symmetry;
 #[cfg(test)]
 mod testmesh;
