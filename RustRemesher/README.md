@@ -56,5 +56,7 @@ usó su código ni sus binarios.
 - La salida es una malla nueva: UVs, atributos y shape keys no se transfieren.
 - Las guías de curva son suaves (orientan el flujo, no fuerzan un loop exacto sobre la curva).
 - La simetría supone el objeto simétrico y trabaja en el espacio local del objeto.
+- Un cono de 64 lados con más de ~2000 cuads sale cerrado pero con polos de más (169 a 5000 cuads) y tarda; está
+  documentado para arreglarlo en `CLAUDE.md` ("Known problem: cone").
 - Superficies abiertas muy grandes (≈20 000 cuads) o con objetivos diminutos (decenas de cuads) pueden salir con
   más polos de la cuenta. Detalles y diagnósticos en `CLAUDE.md`.
