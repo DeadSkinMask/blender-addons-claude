@@ -12,6 +12,15 @@ import bpy
 TYPE_DEFAULT_ROLES = {'MESH': 'STATIC'}
 
 
+def default_role(obj, in_asset=False):
+    """Role for an object without its own or a collection role."""
+    if obj.type == 'EMPTY' and obj.instance_type == 'COLLECTION' and obj.instance_collection:
+        return 'INSTANCE'
+    if obj.type == 'LIGHT' and in_asset:
+        return 'LIGHT'
+    return TYPE_DEFAULT_ROLES.get(obj.type)
+
+
 def _layer_collections(view_layer):
     """{collection: LayerCollection} for the whole view layer tree."""
     result = {}
@@ -28,7 +37,13 @@ def collect(scene, view_layer):
     root = scene.gbridge.root
     if root is None:
         return []
-    layer_colls = _layer_collections(view_layer)
+    return collect_collection(root, _layer_collections(view_layer))
+
+
+def collect_collection(root, layer_colls=None, in_asset=False):
+    """[(object, role)] under `root`. Without `layer_colls` (assets) view layer
+    exclusion is ignored; "skip" always applies."""
+    layer_colls = layer_colls or {}
     found = {}
 
     def walk(collection, inherited_role):
@@ -40,7 +55,7 @@ def collect(scene, view_layer):
             if obj.name in found or obj.gbridge.skip:
                 continue
             obj_role = obj.gbridge.role if obj.gbridge.role != 'AUTO' else (
-                role or TYPE_DEFAULT_ROLES.get(obj.type))
+                role or default_role(obj, in_asset))
             if obj_role:
                 found[obj.name] = (obj, obj_role)
         for child in sorted(collection.children, key=lambda c: c.name):

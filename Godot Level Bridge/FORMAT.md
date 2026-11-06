@@ -2,7 +2,7 @@
 
 Contrato entre el addon de Blender (`godot_level_bridge/`, escritor) y el plugin de Godot (`addons/level_bridge/` del juego, lector). Cualquier cambio se hace en los dos lados a la vez, junto con sus tests, y se regeneran los fixtures (`UPDATE_FIXTURES=1 ./run_tests.sh`).
 
-Estado: **fases B0–B3** (geometría estática, placeholders, marcadores, colisores, áreas, paths, instancias de Geometry Nodes como MultiMesh). Lo marcado *(fase N)* está diseñado en `ANALISIS_Level_Bridge.md` §5 y se fija aquí al implementarse.
+Estado: **fases B0–B4** (geometría estática, placeholders, marcadores, colisores, áreas, paths, instancias de Geometry Nodes como MultiMesh, assets por colección instanciada). Lo marcado *(fase N)* está diseñado en `ANALISIS_Level_Bridge.md` §5 y se fija aquí al implementarse.
 
 ## 1. Archivos
 
@@ -12,7 +12,9 @@ Estado: **fases B0–B3** (geometría estática, placeholders, marcadores, colis
 | `<salida>/<nivel>_static.glb` | Geometría estática del nivel (no existe si el nivel no tiene) |
 | `<salida>/multimesh/<nivel>_<host>_<geometría>.glb` | Malla de un MultiMesh, en el origen |
 | `<salida>/multimesh/<nivel>_<host>_<geometría>_<trozo>.gmmi` | Transformaciones de un trozo del MultiMesh |
-| `<assets>/<asset>.glb` (+ `.asset.json`) *(fase 4)* | Colecciones instanciadas |
+| `<assets>/<asset>.asset.json` | Manifiesto de un asset (colección instanciada), mismo formato que un nivel (§4c) |
+| `<assets>/<asset>.glb` | Geometría estática del asset (no existe si no tiene) |
+| `<assets>/<asset>.tscn` | Escena del asset: la genera Godot a partir de los dos anteriores (§4c) |
 
 Carpetas por defecto, relativas al `.blend` (`levels/<área>/<sala>/source/<sala>.blend`): salida `//../generated/`, assets `//../../_kit/bridge_assets/`. Ambas deben estar dentro del proyecto Godot. El nombre del nivel es el del `.blend` (o `level_name` de la escena), limpiado con `bpy.path.clean_name`.
 
@@ -45,7 +47,7 @@ Escritura: JSON UTF-8 con 2 espacios y `\n` final, floats redondeados a 5 decima
 | `version` | int | El lector rechaza versiones mayores que la suya. Solo sube con cambios incompatibles. |
 | `level` | string | Nombre del nivel. |
 | `static_scene` | string \| null | GLB estático, relativo al manifiesto. |
-| `assets` | objeto | *(fase 4)* |
+| `assets` | objeto | Assets que usan las entidades `instance` (§4c): `{nombre: {"manifest": "res://…/<nombre>.asset.json", "hash": "<sha1>"}}`. |
 | `entities` | array | Sección 4. |
 
 ## 4. Entidades
@@ -55,7 +57,7 @@ Comunes:
 | Campo | Tipo | Significado |
 |---|---|---|
 | `uid` | string | Identificador estable: se guarda en el objeto de Blender (`gbridge.uid`) y como metadata `gbridge_uid` del nodo en Godot. Al duplicar un objeto, la copia recibe uno nuevo. |
-| `type` | string | `placeholder`, `marker`, `collider`, `area`, `path`, `multimesh` |
+| `type` | string | `placeholder`, `marker`, `collider`, `area`, `path`, `multimesh`, `instance`, `light` |
 | `name` | string | Nombre del objeto; nombre del nodo en Godot. |
 | `xform` | 12 floats | Transform en espacio Godot: columnas de la base x, y, z y origen. |
 
@@ -66,6 +68,8 @@ Comunes:
 | `collider` | forma (§5), `layer`, `mask`, `body` (`static` \| `animatable`), `group`. `xform` = centro de la forma, sin escala. | `StaticBody3D`/`AnimatableBody3D` + `CollisionShape3D` "Shape". Los colisores con el mismo `group` comparten un cuerpo (llamado como el grupo, en el origen) con una `CollisionShape3D` por colisor (llamada como el colisor). |
 | `area` | forma (§5), `layer`, `mask`, `scene` (opcional, raíz Area3D), `props`. | `Area3D` (o la instancia de `scene`) + `CollisionShape3D` "Shape". Sin `scene`, `props` → metadata. |
 | `path` | `splines`, `props`. `xform` sin escala (horneada en los puntos). | `Path3D` con el primer spline; `props` → metadata. |
+| `instance` | `asset` (clave de `assets`), `props`. `xform` incluye la escala. | Instancia de `<asset>.tscn`; `props` → metadata de su raíz. |
+| `light` | `light` (`omni` \| `spot`), `color` [r,g,b], `energy`, `range`, `shadow` (bool), `spot_angle` (grados, solo spot), `props`. `xform` sin escala. | `OmniLight3D` / `SpotLight3D`; `props` → propiedades del nodo (p. ej. `omni_attenuation`), aplicadas después de los campos. |
 | `multimesh` | `mesh` (GLB relativo al manifiesto), `chunks`: `[{"transforms": "multimesh/….gmmi", "count": n}]`. Sin `xform` ni `props`; `uid` = `<uid del host>:<geometría>`. | `Node3D` con un `BridgeMultiMesh` (`MultiMeshInstance3D`) por trozo, que lee su `.gmmi` y la malla del GLB al cargar (no se guardan en la escena). |
 
 `layer`/`mask`: números de capa de Godot (1–32). Si el objeto no marca ninguno: colisor → capa `world` (o 1), máscara vacía; área → máscara `player` (si existen esos nombres en `project.godot`).
@@ -81,11 +85,36 @@ Opción "Instancias" de cada objeto de geometría estática (o por defecto de la
 | **MultiMesh** (por defecto) | Solo las instancias, agrupadas por la geometría instanciada (instancias de objeto o de geometría), como entidades `multimesh`. **La geometría propia del objeto no se exporta** (p. ej. el camino guía de un scatter). |
 | Realizar | Cada instancia como un nodo de la geometría estática que comparte la malla, junto con la geometría propia del objeto. |
 | Ignorar | No se exportan las instancias; la geometría propia del objeto sí. |
-| Escenas *(fase 4)* | Por ahora se exporta como MultiMesh (aviso en Validación). |
+| Escenas | Las instancias de una **colección-asset** (§4c) → una entidad `instance` por cada instancia de la colección (`uid` = `<uid del host>:<asset>:<n>`, `name` = `<host>_<asset>_<n>`). Las demás instancias del objeto (de objetos sueltos) se exportan como MultiMesh. |
 
 Trozos: las instancias se agrupan por `floor(x / tamaño)` (`Trozo MultiMesh`, 20 m por defecto) para que Godot descarte los que no ve.
 
 `.gmmi`: `"GMMI0001"`, `uint32` cantidad y por instancia 12 `float32` little-endian (columnas x, y, z de la base y origen, ya en espacio Godot). En un juego exportado, los `.gmmi` deben incluirse en los filtros de recursos no importados de la exportación (`*.gmmi`).
+
+## 4c. Assets (colecciones instanciadas)
+
+- Un **asset** es una colección del mismo `.blend` instanciada por un empty (Objeto → Instancing → Collection; rol automático `instance`) o por Geometry Nodes con la opción "Escenas" (nodo Collection Info). Nombre = nombre de la colección limpiado con `bpy.path.clean_name`; dos colecciones con el mismo nombre limpio son un error.
+- La colección-asset suele vivir **fuera de la colección raíz** o excluida del view layer (si no, su contenido se exportaría también como parte del nivel: aviso). Su contenido se exporta aunque esté excluida.
+- Contenido: los objetos de la colección y sus subcolecciones con las mismas reglas de rol que un nivel (§2; "No exportar" se respeta, la exclusión del view layer no). Las **luces** de un asset se exportan por defecto (rol `light`); en un nivel solo si se les pone ese rol. Las instancias de Geometry Nodes dentro de un asset siempre se realizan en su GLB. Un empty-instancia dentro de un asset da una entidad `instance` (assets anidados).
+- Espacio: el origen del asset es el `instance_offset` de la colección (Propiedades de la colección → Instancing → X/Y/Z); todo `xform` y el GLB del asset son relativos a él.
+- `<asset>.asset.json` es un manifiesto `gbridge-level` completo (`level` = nombre del asset, `static_scene` = `<asset>.glb` o null, `assets`, `entities`) y siempre se escribe. Los uid de las entidades del asset son propios del asset.
+- `hash`: SHA-1 del `.asset.json` y del `.glb`; cambia si cambia cualquier cosa del asset o de sus assets anidados. Se escriben solo si cambian.
+- Los assets de la carpeta compartida no se borran al exportar un nivel (otras salas pueden usarlos).
+- **Godot:** al reconstruir, el builder genera `<asset>.tscn` junto al manifiesto del asset (raíz `Node3D` con el nombre del asset, metadata `gbridge_asset_hash`) con el mismo código que un nivel, y lo regenera solo si el hash cambió. Cada entidad `instance` es una instancia de esa escena: editar el asset en Blender y reexportar actualiza todas sus copias. No editar los `.tscn` de assets a mano (se sobrescriben); para lógica, usar placeholders con escenas propias dentro del asset.
+- Duplicados enlazados (objetos que comparten malla) **no** se convierten en assets: siguen en la geometría estática compartiendo la malla (§8). Para que algo sea un asset, se instancia su colección.
+
+### Luces
+
+| Campo | Desde Blender |
+|---|---|
+| `light` | Punto → `omni`; foco → `spot`. Sol y área no se exportan (aviso). |
+| `color` | Color de la luz. |
+| `energy` | Potencia en W / 100 (100 W → 1,0). |
+| `range` | "Custom Distance" de la luz si está activo; si no, 10 m. |
+| `shadow` | "Shadow" de la luz. |
+| `spot_angle` | Mitad del tamaño del foco, en grados. |
+
+Las luces de glTF no sirven (llegan con alcance infinito y energías de miles): por eso son entidades. Ajustes finos con props, p. ej. `light_energy`, `omni_range`, `omni_attenuation`, `light_volumetric_fog_energy`.
 
 ## 5. Formas
 

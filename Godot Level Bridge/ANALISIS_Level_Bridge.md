@@ -382,7 +382,7 @@ Cada fase deja algo usable y amplía el formato de forma compatible (el campo `v
 ### Fase 4 — Assets e instancias de colección
 - **Blender:** instancias de colección dentro del mismo `.blend` (no se usan bibliotecas enlazadas) → cada colección única se exporta una vez a la carpeta de assets (5.3) como `<nombre>.glb`, con el origen en el `instance_offset` de la colección. Si la colección contiene colisores, áreas o placeholders, se escribe también `<nombre>.asset.json` (mismo formato que un nivel). Caché por hash. Acción "Exportar asset seleccionado". Política "Escenas" de 4.2: instancias de Geometry Nodes que apuntan a una colección-asset → instancias de su escena.
 - **Godot:** el builder genera `<nombre>.tscn` en la carpeta de assets (GLB + entidades del asset) y el nivel instancia esa escena. Editar el asset y reexportar actualiza todas sus copias.
-- **Decidir aquí:** si los *linked duplicates* (objetos que comparten malla) se promueven automáticamente a assets o se quedan en la geometría estática.
+- **Decidido (2026-11-06):** los *linked duplicates* no se promueven a assets: se quedan en la geometría estática compartiendo la malla (ya lo hace B1); un asset es siempre una colección instanciada. El `.asset.json` se escribe siempre (no solo con entidades), así Godot construye todos los assets con el mismo código. Las luces de un asset van como entidades `light` (las de glTF llegan a Godot con alcance infinito y energías de miles). Detalle en `FORMAT.md` §4c.
 - **Aceptación:** 200 pilares en el nivel → 1 GLB de asset y 200 instancias de escena; un muro generado por GN con antorchas instanciadas como escenas (con su luz).
 
 ### Fase 5 — Godot → Blender I: catálogo de escenas
@@ -433,4 +433,5 @@ Cada fase deja algo usable y amplía el formato de forma compatible (el campo `v
 - **B1 y B2 cerradas (2026-11-01)** con el checklist manual completo.
 - **B3 implementada (2026-11-01, addon 0.4.0):** instancias de Geometry Nodes (de objeto y de geometría) → MultiMesh por trozos en X (`.gmmi`) o nodos estáticos ("Realizar"); con MultiMesh no se exporta la geometría propia del host; en Godot `BridgeMultiMesh` lee el `.gmmi` al cargar.
 - **B3 verificada (2026-11-02)** con el scatter de cristales de `catedral_01` (274 instancias, colores en modo Albedo).
-- **Siguiente:** G4 (salas y transiciones).
+- **B4 implementada (2026-11-06, addon 0.5.0):** colecciones instanciadas → assets (`<asset>.asset.json` + `<asset>.glb` en la carpeta de assets; `.tscn` generado por el builder, regenerado solo si cambia el hash); empties-instancia y Geometry Nodes con la opción "Escenas" → entidades `instance`; luces de los assets como entidades `light`; botón "Exportar asset". Probado con una antorcha en la sala de guardado (`catedral_05`). Falta el checklist manual.
+- **Siguiente:** B5 (catálogo de escenas).

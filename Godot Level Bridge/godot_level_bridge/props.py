@@ -15,6 +15,8 @@ ROLES = [
     ('PLACEHOLDER', "Placeholder", "Instancia de una escena .tscn de Godot"),
     ('MARKER', "Marcador", "Marker3D (spawns, entry points, waypoints)"),
     ('PATH', "Path", "Path3D a partir de una curva"),
+    ('INSTANCE', "Instancia de colección", "Empty que instancia una colección: instancia de la escena del asset"),
+    ('LIGHT', "Luz", "OmniLight3D / SpotLight3D (en un asset las luces se exportan por defecto)"),
 ]
 
 OBJECT_ROLES = [('AUTO', "Automático", "Rol de su colección o, si no tiene, según el tipo de objeto")] + ROLES

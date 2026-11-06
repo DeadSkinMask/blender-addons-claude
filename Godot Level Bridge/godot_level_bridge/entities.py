@@ -1,5 +1,6 @@
 """Manifest entities built from Blender objects (FORMAT.md §4)."""
 
+import math
 import secrets
 
 import bpy
@@ -7,7 +8,11 @@ from mathutils import Vector
 
 from . import coords, godot_project
 
-ENTITY_ROLES = ('PLACEHOLDER', 'MARKER', 'COLLIDER', 'AREA', 'PATH')
+ENTITY_ROLES = ('PLACEHOLDER', 'MARKER', 'COLLIDER', 'AREA', 'PATH', 'INSTANCE', 'LIGHT')
+# Blender light → Godot energy (100 W → 1.0) and range without Custom Distance.
+LIGHT_WATTS_PER_ENERGY = 100.0
+DEFAULT_LIGHT_RANGE = 10.0
+LIGHT_TYPES = {'POINT': "omni", 'SPOT': "spot"}
 SHAPED_ROLES = ('COLLIDER', 'AREA')
 # Custom properties that belong to Blender or other add-ons, never entity props.
 IGNORED_PROPS = {"cycles", "cycles_visibility", "gbridge"}
@@ -103,10 +108,18 @@ def world_scale(obj):
     return obj.matrix_world.to_scale()
 
 
-def shape_fields(obj, depsgraph):
-    """Shape dict (in Godot units, scale baked) and the shape's world matrix."""
+def asset_name(collection):
+    """Name of the asset made from an instanced collection (FORMAT.md §4c)."""
+    return bpy.path.clean_name(collection.name)
+
+
+def shape_fields(obj, depsgraph, world=None):
+    """Shape dict (in Godot units, scale baked) and the shape's world matrix.
+
+    `world` replaces obj.matrix_world (an asset's objects use asset space)."""
+    world = obj.matrix_world if world is None else world
     lo, hi = local_bounds(obj)
-    scale = world_scale(obj)
+    scale = world.to_scale()
     center_local = (lo + hi) / 2
     dims = Vector(((hi[i] - lo[i]) * abs(scale[i]) for i in range(3)))
     shape = obj.gbridge.shape
@@ -134,8 +147,8 @@ def shape_fields(obj, depsgraph):
                                    for tri in mesh.loop_triangles for i in tri.vertices]
         finally:
             obj.evaluated_get(depsgraph).to_mesh_clear()
-    center_world = obj.matrix_world @ center_local
-    m = coords.without_scale(obj.matrix_world)
+    center_world = world @ center_local
+    m = coords.without_scale(world)
     m.translation = center_world
     return fields, m
 
@@ -155,18 +168,40 @@ def default_layers(project_root, role):
 
 # --- entities ---
 
-def build(obj, role, depsgraph, project_root, uid_of):
+def build(obj, role, depsgraph, project_root, uid_of, space=None):
+    """Manifest entity, or None for an object that cannot be exported (validation
+    reports it). `space` maps world matrices to the file's space (asset origin)."""
     g = obj.gbridge
+    world = space @ obj.matrix_world if space is not None else obj.matrix_world
     entity = {"uid": g.uid, "type": role.lower(), "name": obj.name}
     if role == 'PLACEHOLDER':
         entity["scene"] = g.scene
         entity["props"] = props(obj, uid_of)
-        entity["xform"] = coords.matrix(obj.matrix_world)
+        entity["xform"] = coords.matrix(world)
+    elif role == 'INSTANCE':
+        if obj.instance_collection is None:
+            return None
+        entity["asset"] = asset_name(obj.instance_collection)
+        entity["props"] = props(obj, uid_of)
+        entity["xform"] = coords.matrix(world)
+    elif role == 'LIGHT':
+        if obj.type != 'LIGHT' or obj.data.type not in LIGHT_TYPES:
+            return None
+        light = obj.data
+        entity["light"] = LIGHT_TYPES[light.type]
+        entity["color"] = [coords.num(c) for c in light.color]
+        entity["energy"] = coords.num(light.energy / LIGHT_WATTS_PER_ENERGY)
+        entity["range"] = coords.num(light.cutoff_distance if light.use_custom_distance else DEFAULT_LIGHT_RANGE)
+        entity["shadow"] = bool(light.use_shadow)
+        if light.type == 'SPOT':
+            entity["spot_angle"] = coords.num(math.degrees(light.spot_size) / 2)
+        entity["props"] = props(obj, uid_of)
+        entity["xform"] = coords.matrix(coords.without_scale(world))
     elif role == 'MARKER':
         entity["props"] = props(obj, uid_of)
-        entity["xform"] = coords.matrix(coords.without_scale(obj.matrix_world))
+        entity["xform"] = coords.matrix(coords.without_scale(world))
     elif role in SHAPED_ROLES:
-        fields, m = shape_fields(obj, depsgraph)
+        fields, m = shape_fields(obj, depsgraph, world)
         entity.update(fields)
         layer, mask = layer_list(g.layer), layer_list(g.mask)
         if not layer and not mask:
@@ -181,15 +216,15 @@ def build(obj, role, depsgraph, project_root, uid_of):
             entity["props"] = props(obj, uid_of)
         entity["xform"] = coords.matrix(m)
     elif role == 'PATH':
-        entity["splines"] = splines(obj)
+        entity["splines"] = splines(obj, world)
         entity["props"] = props(obj, uid_of)
-        entity["xform"] = coords.matrix(coords.without_scale(obj.matrix_world))
+        entity["xform"] = coords.matrix(coords.without_scale(world))
     return entity
 
 
-def splines(obj):
+def splines(obj, world=None):
     """Curve splines in Godot space, scale baked; Bezier handles relative to their point."""
-    scale = world_scale(obj)
+    scale = (obj.matrix_world if world is None else world).to_scale()
 
     def scaled(v):
         return coords.vec(Vector((v[0] * scale[0], v[1] * scale[1], v[2] * scale[2])))

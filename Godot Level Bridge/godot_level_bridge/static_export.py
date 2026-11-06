@@ -18,6 +18,7 @@ so Godot's LevelBridgeVertexColors makes its material use them, NONE drops them.
 import array
 import hashlib
 import os
+import re
 import tempfile
 
 import bpy
@@ -45,6 +46,13 @@ GLTF_OPTIONS = dict(
     export_animations=False,
     export_extras=True,  # carries the vertex color mode to Godot (mesh extras)
 )
+
+
+def _stable_name(mesh, base):
+    """Name the staging mesh after its source, not after whatever copies exist now:
+    the glTF stores the mesh name, and a ".001"/".002" that depends on other
+    temporary copies would rewrite an unchanged GLB."""
+    mesh.name = re.sub(r"\.\d{3}$", "", base) + ".gbridge"
 
 
 def _policy(obj, scene):
@@ -126,7 +134,7 @@ def normalize_colors(mesh):
         mesh.color_attributes.render_color_index = mesh.color_attributes.active_color_index
 
 
-def export(context, objects, path, level_name=STAGING_SCENE, extra=()):
+def export(context, objects, path, level_name=STAGING_SCENE, extra=(), space=None):
     """Write the GLB for `objects` if its content changed.
 
     Returns True if written, False if unchanged, None if there was nothing to
@@ -134,7 +142,8 @@ def export(context, objects, path, level_name=STAGING_SCENE, extra=()):
     (name, mesh, world matrix, vertex color mode) whose mesh is a temporary copy
     owned by the caller (Geometry Nodes instances): it is normalized in place and
     shared between nodes that pass the same mesh. The staging scene is named
-    after the level: Godot prefixes imported mesh names with it.
+    after the level: Godot prefixes imported mesh names with it. `space` maps
+    world matrices to the file's space (an asset's origin).
     """
     scene = context.scene
     window = context.window
@@ -144,7 +153,7 @@ def export(context, objects, path, level_name=STAGING_SCENE, extra=()):
     copies, meshes, renamed = [], [], []
     shared = {}       # (obj.data, color mode) -> staging mesh (plain linked duplicates)
     by_signature = {}  # geometry hash -> staging mesh
-    prepared = set()   # extra meshes already normalized
+    prepared = {}      # extra mesh → its name before the export (restored after)
 
     def staging_mesh(obj):
         policy = _policy(obj, scene)
@@ -153,6 +162,7 @@ def export(context, objects, path, level_name=STAGING_SCENE, extra=()):
         mesh = shared.get(key) if key is not None else None
         if mesh is None:
             mesh = _mesh_copy(obj, depsgraph, policy)
+            _stable_name(mesh, obj.data.name if obj.type == 'MESH' else obj.name)
             if not mesh.vertices:
                 bpy.data.meshes.remove(mesh)  # e.g. a Geometry Nodes host that only outputs instances
                 return None
@@ -177,7 +187,8 @@ def export(context, objects, path, level_name=STAGING_SCENE, extra=()):
     def prepare_extra(mesh, color_mode):
         if mesh in prepared:
             return
-        prepared.add(mesh)
+        prepared[mesh] = mesh.name
+        _stable_name(mesh, mesh.name)
         if color_mode == 'NONE':
             for attr in list(mesh.color_attributes):
                 mesh.color_attributes.remove(attr)
@@ -187,7 +198,7 @@ def export(context, objects, path, level_name=STAGING_SCENE, extra=()):
 
     def add_copy(name, mesh, matrix, obj=None):
         copy = bpy.data.objects.new(name, mesh)
-        copy.matrix_world = matrix
+        copy.matrix_world = space @ matrix if space is not None else matrix
         for i, slot in enumerate(obj.material_slots if obj else ()):
             if slot.link == 'OBJECT' and i < len(copy.material_slots):
                 copy.material_slots[i].link = 'OBJECT'
@@ -230,6 +241,8 @@ def export(context, objects, path, level_name=STAGING_SCENE, extra=()):
             bpy.data.objects.remove(copy)
         for mesh in meshes:
             bpy.data.meshes.remove(mesh)
+        for mesh, name in prepared.items():
+            mesh.name = name  # free the stable name for the next export
         bpy.data.scenes.remove(staging)
         for obj, name in renamed:
             obj.name = name

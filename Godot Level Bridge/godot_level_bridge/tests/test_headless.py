@@ -20,6 +20,7 @@ BLEND = os.path.join(ROOM_DIR, "source", "room_a.blend")
 MANIFEST = os.path.join(ROOM_DIR, "generated", "room_a.level.json")
 RECEIVER = "res://tests/fixtures/scenes/receiver.tscn"
 SAMPLE_DIR = os.path.join(PROJECT, "tests", "fixtures", "sample")
+ASSETS_DIR = os.path.join(PROJECT, "levels", "test", "_kit", "bridge_assets")
 PROJECT_GODOT = """config_version=5
 
 [layer_names]
@@ -281,6 +282,50 @@ def _scatter(name, col, source, count, spacing, location):
     return host
 
 
+def _wall_with_torches(name, col, collection, count, spacing, location):
+    """Mesh host (a wall) whose Geometry Nodes add `count` instances of `collection`
+    along X with Collection Info, keeping the wall's own geometry."""
+    tree = bpy.data.node_groups.new(name, 'GeometryNodeTree')
+    tree.interface.new_socket("Geometry", in_out='INPUT', socket_type='NodeSocketGeometry')
+    tree.interface.new_socket("Geometry", in_out='OUTPUT', socket_type='NodeSocketGeometry')
+    nodes, links = tree.nodes, tree.links
+    group_input = nodes.new('NodeGroupInput')
+    output = nodes.new('NodeGroupOutput')
+    join = nodes.new('GeometryNodeJoinGeometry')
+    line = nodes.new('GeometryNodeMeshLine')
+    line.inputs["Count"].default_value = count
+    line.inputs["Offset"].default_value = (spacing, 0, 0)
+    info = nodes.new('GeometryNodeCollectionInfo')
+    info.inputs["Collection"].default_value = collection
+    on_points = nodes.new('GeometryNodeInstanceOnPoints')
+    links.new(line.outputs["Mesh"], on_points.inputs["Points"])
+    links.new(info.outputs[0], on_points.inputs["Instance"])
+    links.new(group_input.outputs[0], join.inputs[0])
+    links.new(on_points.outputs["Instances"], join.inputs[0])
+    links.new(join.outputs[0], output.inputs[0])
+    import bmesh
+    mesh = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=0.5)
+    bm.to_mesh(mesh)
+    bm.free()
+    host = bpy.data.objects.new(name, mesh)
+    host.location = location
+    host.modifiers.new("Torches", 'NODES').node_group = tree
+    host.gbridge.instances = 'SCENES'
+    col.objects.link(host)
+    return host
+
+
+def _instance(name, col, collection, location):
+    obj = bpy.data.objects.new(name, None)
+    obj.instance_type = 'COLLECTION'
+    obj.instance_collection = collection
+    obj.location = location
+    col.objects.link(obj)
+    return obj
+
+
 def _fixed_uid(obj, uid):
     obj.gbridge.uid = uid
     obj.gbridge.uid_owner = obj.name
@@ -375,6 +420,31 @@ def t_build_sample_level():
     scatter = _scatter("Scatter", geo, crystal, 3, 15.0, (0, 6, 0))
     _fixed_uid(scatter, "s0000001")
 
+    # Asset (FORMAT.md §4c): a torch modeled 10 m below the origin (instance_offset),
+    # outside the root and excluded from the view layer, with a collider and a light.
+    library = _collection("Assets", scene.collection)
+    torch = _collection("Antorcha", library)
+    torch.instance_offset = (0, 0, -10)
+    _cube("Palo", torch, location=(0, 0, -9.5), scale=(0.1, 0.1, 0.5))
+    stick_col = _cube("PaloCol", torch, location=(0, 0, -9.5), scale=(0.1, 0.1, 0.5))
+    stick_col.gbridge.role = 'COLLIDER'
+    _fixed_uid(stick_col, "a0000001")
+    flame = bpy.data.objects.new("Llama", bpy.data.lights.new("Llama", 'POINT'))
+    flame.data.energy = 150.0
+    flame.data.color = (1.0, 0.5, 0.25)
+    flame.data.use_custom_distance = True
+    flame.data.cutoff_distance = 6.0
+    flame.location = (0, 0, -8.8)
+    flame["omni_attenuation"] = 1.5
+    torch.objects.link(flame)
+    _fixed_uid(flame, "a0000002")
+    bpy.context.view_layer.layer_collection.children["Assets"].exclude = True
+    single = _instance("Antorcha1", geo, torch, (-8, 1, 2))
+    single["lit"] = True
+    _fixed_uid(single, "i0000001")
+    wall = _wall_with_torches("MuroAntorchas", geo, torch, 3, 4.0, (0, 8, 0))
+    _fixed_uid(wall, "w0000001")
+
     # Outside the root, in a skipped collection and in an excluded one: never exported.
     _cube("Helper", scene.collection)
     skipped = _collection("WIP", root)
@@ -394,6 +464,7 @@ def t_build_sample_level():
         "FarolaA": 'STATIC', "FarolaB": 'STATIC', "FarolaC": 'STATIC',
         "Mascara": 'STATIC', "SinColores": 'STATIC', "Scatter": 'STATIC', "OneWayCol": 'COLLIDER', "PillarCol": 'COLLIDER',
         "Receiver": 'PLACEHOLDER', "Spawn": 'MARKER', "Trigger": 'AREA', "Rail": 'PATH',
+        "Antorcha1": 'INSTANCE', "MuroAntorchas": 'STATIC',
     }, roles
 
 
@@ -401,11 +472,13 @@ def t_export_sample_level():
     result = mod.export.export_level(bpy.context)
     assert result["written"] and result["static_written"], result
     warnings = [(i.object, i.message) for i in result["issues"] if i.level != 'INFO']
-    assert warnings == [("Floor", "escala no uniforme sin aplicar")], warnings
+    assert warnings == [("Floor", "escala no uniforme sin aplicar"),
+                        ("Palo (Antorcha)", "escala no uniforme sin aplicar")], warnings
     data = read_json(MANIFEST)
     assert data["static_scene"] == "room_a_static.glb"
     assert [e["name"] for e in data["entities"]] == \
-        ["FloorCol", "OneWayCol", "PillarCol", "Rail", "Receiver", "Spawn", "Trigger", "Scatter_Cristal"], \
+        ["FloorCol", "OneWayCol", "PillarCol", "Rail", "Receiver", "Spawn", "Trigger", "Antorcha1",
+         "MuroAntorchas_Antorcha_0", "MuroAntorchas_Antorcha_1", "MuroAntorchas_Antorcha_2", "Scatter_Cristal"], \
         [e["name"] for e in data["entities"]]
 
 
@@ -413,8 +486,9 @@ def t_static_glb():
     path = os.path.join(os.path.dirname(MANIFEST), "room_a_static.glb")
     gltf = glb_json(path)
     nodes = {n["name"]: n for n in gltf["nodes"]}
-    assert sorted(nodes) == ["FarolaA", "FarolaB", "FarolaC", "Floor", "Mascara", "PilarA", "PilarB",
-                             "SinColores"], list(nodes)
+    assert sorted(nodes) == ["FarolaA", "FarolaB", "FarolaC", "Floor", "Mascara", "MuroAntorchas", "PilarA",
+                             "PilarB", "SinColores"], list(nodes)
+    assert not [n for n in nodes if n.startswith(("Palo", "Llama"))], "asset content leaked into the level"
 
     def mesh_of(name):
         return gltf["meshes"][nodes[name]["mesh"]]
@@ -431,7 +505,7 @@ def t_static_glb():
     assert nodes["FarolaC"]["mesh"] != nodes["FarolaA"]["mesh"], "different modifier result"
     # Without its colors, SinColores is the same cube as the pillars: shared too.
     assert nodes["SinColores"]["mesh"] == nodes["PilarA"]["mesh"]
-    assert len(gltf["meshes"]) == 5, len(gltf["meshes"])
+    assert len(gltf["meshes"]) == 6, len(gltf["meshes"])
 
 
 def t_blend_untouched():
@@ -532,6 +606,107 @@ def t_instance_policies():
         mod.export.export_level(bpy.context)
 
 
+def t_assets():
+    data = read_json(MANIFEST)
+    assert list(data["assets"]) == ["Antorcha"], data["assets"]
+    entry = data["assets"]["Antorcha"]
+    assert entry["manifest"] == "res://levels/test/_kit/bridge_assets/Antorcha.asset.json", entry
+    assert len(entry["hash"]) == 40
+    single = by_name(data, "Antorcha1")
+    assert single["type"] == "instance" and single["asset"] == "Antorcha" and single["uid"] == "i0000001"
+    assert single["props"] == {"lit": True}
+    assert single["xform"][9:] == [-8.0, 2.0, -1.0], single["xform"]  # Blender (-8, 1, 2)
+    asset = read_json(os.path.join(ASSETS_DIR, "Antorcha.asset.json"))
+    assert asset["format"] == "gbridge-level" and asset["level"] == "Antorcha"
+    assert asset["static_scene"] == "Antorcha.glb" and asset["assets"] == {}
+    assert [e["name"] for e in asset["entities"]] == ["Llama", "PaloCol"], asset["entities"]
+    col = by_name(asset, "PaloCol")
+    # Modeled at z = -9.5 with instance_offset z = -10 → 0.5 above the asset origin.
+    assert col["xform"][9:] == [0.0, 0.5, 0.0] and col["size"] == [0.2, 1.0, 0.2], col
+    light = by_name(asset, "Llama")
+    assert light["type"] == "light" and light["light"] == "omni", light
+    assert light["energy"] == 1.5 and light["range"] == 6.0 and light["color"] == [1.0, 0.5, 0.25], light
+    assert light["props"] == {"omni_attenuation": 1.5} and light["xform"][9:] == [0.0, 1.2, 0.0], light
+    gltf = glb_json(os.path.join(ASSETS_DIR, "Antorcha.glb"))
+    nodes = {n["name"]: n for n in gltf["nodes"]}
+    assert sorted(nodes) == ["Palo"], list(nodes)
+    assert close(nodes["Palo"]["translation"], [0, 0.5, 0]), nodes["Palo"]
+    assert "KHR_lights_punctual" not in gltf.get("extensionsUsed", []), "lights go as entities, not glTF"
+
+
+def t_geometry_nodes_scenes():
+    data = read_json(MANIFEST)
+    torches = [e for e in data["entities"] if e["name"].startswith("MuroAntorchas_")]
+    assert [e["uid"] for e in torches] == ["w0000001:Antorcha:0", "w0000001:Antorcha:1", "w0000001:Antorcha:2"]
+    for i, e in enumerate(torches):
+        assert e["type"] == "instance" and e["asset"] == "Antorcha", e
+        # Wall at Blender (0, 8, 0), torches every 4 m along X → Godot (4i, 0, -8).
+        assert close(e["xform"], [1, 0, 0, 0, 1, 0, 0, 0, 1, 4 * i, 0, -8]), e["xform"]
+    assert not [e for e in data["entities"] if e["type"] == "multimesh" and "MuroAntorchas" in e["name"]]
+
+
+def t_asset_hash_follows_content():
+    flame = bpy.data.objects["Llama"]
+    before = read_json(MANIFEST)["assets"]["Antorcha"]["hash"]
+    flame.data.energy = 300.0
+    try:
+        result = mod.export.export_level(bpy.context)
+        assert any(p.endswith("Antorcha.asset.json") for p in result["assets_written"]), result["assets_written"]
+        assert read_json(MANIFEST)["assets"]["Antorcha"]["hash"] != before
+    finally:
+        flame.data.energy = 150.0
+        mod.export.export_level(bpy.context)
+    assert read_json(MANIFEST)["assets"]["Antorcha"]["hash"] == before
+
+
+def t_export_asset_operator():
+    exporter = mod.export.export_asset(bpy.context, bpy.data.objects["Antorcha1"])
+    assert sorted(exporter.results) == ["Antorcha"] and exporter.written == [], exporter.written
+    bpy.context.view_layer.objects.active = bpy.data.objects["Antorcha1"]
+    assert bpy.ops.gbridge.export_asset() == {'FINISHED'}
+    bpy.context.view_layer.objects.active = bpy.data.objects["Floor"]
+    raises(RuntimeError, lambda: bpy.ops.gbridge.export_asset())
+
+
+def t_asset_inside_root_warns():
+    torch = bpy.data.collections["Antorcha"]
+    root = bpy.context.scene.gbridge.root
+    root.children.link(torch)
+    try:
+        _entries, issues, _root = mod.export.run_validation(bpy.context)
+        assert any(i.object == "Antorcha" and "dentro de la raíz" in i.message for i in issues), issues
+    finally:
+        root.children.unlink(torch)
+
+
+def t_two_hundred_pillars():
+    """Acceptance B4: 200 copies of an asset → one GLB and 200 instance entities."""
+    scene = bpy.context.scene
+    library = bpy.data.collections["Assets"]
+    pillar = _collection("Columna", library)
+    _cube("Fuste", pillar, location=(0, 0, 1), scale=(0.3, 0.3, 1))
+    geo = bpy.data.collections["Geometria"]
+    copies = [_instance("Columna{:03d}".format(i), geo, pillar, (i * 2.0, 3, 0)) for i in range(200)]
+    try:
+        mod.export.export_level(bpy.context)
+        data = read_json(MANIFEST)
+        instances_ = [e for e in data["entities"] if e.get("asset") == "Columna"]
+        assert len(instances_) == 200, len(instances_)
+        assert list(data["assets"]) == ["Antorcha", "Columna"]
+        glbs = [n for n in os.listdir(ASSETS_DIR) if n.startswith("Columna") and n.endswith(".glb")]
+        assert glbs == ["Columna.glb"], glbs
+        level = glb_json(os.path.join(os.path.dirname(MANIFEST), "room_a_static.glb"))
+        assert not [n for n in level["nodes"] if n["name"].startswith("Fuste")]
+    finally:
+        for obj in copies:
+            bpy.data.objects.remove(obj)
+        for obj in list(pillar.objects):
+            bpy.data.objects.remove(obj)
+        bpy.data.collections.remove(pillar)
+        mod.export.export_level(bpy.context)
+    assert list(read_json(MANIFEST)["assets"]) == ["Antorcha"]
+
+
 def t_reexport_sample_unchanged():
     m_manifest = os.path.getmtime(MANIFEST)
     result = mod.export.export_level(bpy.context)
@@ -575,11 +750,13 @@ def t_sample_fixture_for_godot():
     scene = bpy.context.scene
     scene.gbridge.level_name = "sample"
     scene.gbridge.output_dir = SAMPLE_DIR
+    scene.gbridge.assets_dir = os.path.join(SAMPLE_DIR, "assets")
     try:
         mod.export.export_level(bpy.context)
     finally:
         scene.gbridge.level_name = ""
         scene.gbridge.output_dir = "//../generated/"
+        scene.gbridge.assets_dir = "//../../_kit/bridge_assets/"
     produced = read_json(os.path.join(SAMPLE_DIR, "sample.level.json"))
     fixture_dir = os.path.join(GODOT_FIXTURES, "sample")
     if UPDATE_FIXTURES and os.path.isdir(GODOT_FIXTURES):
@@ -594,6 +771,10 @@ def t_sample_fixture_for_godot():
         os.makedirs(fixture_mm, exist_ok=True)
         for name in os.listdir(os.path.join(SAMPLE_DIR, "multimesh")):
             shutil.copyfile(os.path.join(SAMPLE_DIR, "multimesh", name), os.path.join(fixture_mm, name))
+        fixture_assets = os.path.join(fixture_dir, "assets")
+        os.makedirs(fixture_assets, exist_ok=True)
+        for name in os.listdir(os.path.join(SAMPLE_DIR, "assets")):
+            shutil.copyfile(os.path.join(SAMPLE_DIR, "assets", name), os.path.join(fixture_assets, name))
         print("   fixtures updated in", fixture_dir)
     fixture = os.path.join(fixture_dir, "sample.level.json")
     if not os.path.isfile(fixture):
@@ -631,10 +812,16 @@ for name, fn in [
     ("area_marker_placeholder_path", t_area_marker_placeholder_path),
     ("multimesh_instances", t_multimesh_instances),
     ("instance_policies", t_instance_policies),
+    ("assets", t_assets),
+    ("geometry_nodes_scenes", t_geometry_nodes_scenes),
+    ("asset_hash_follows_content", t_asset_hash_follows_content),
+    ("export_asset_operator", t_export_asset_operator),
+    ("asset_inside_root_warns", t_asset_inside_root_warns),
     ("reexport_sample_unchanged", t_reexport_sample_unchanged),
     ("duplicate_uid_is_reassigned", t_duplicate_uid_is_reassigned),
     ("validation_errors_block_export", t_validation_errors_block_export),
     ("sample_fixture_for_godot", t_sample_fixture_for_godot),
+    ("two_hundred_pillars", t_two_hundred_pillars),
     ("disable_enable", t_disable_enable),
 ]:
     check(name, fn)

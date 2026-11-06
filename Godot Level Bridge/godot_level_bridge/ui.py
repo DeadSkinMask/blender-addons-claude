@@ -3,7 +3,7 @@
 import bpy
 from bpy.props import StringProperty
 
-from . import export, godot_project, paths, scope
+from . import entities, export, godot_project, paths, scope
 
 ISSUE_ICONS = {'ERROR': 'ERROR', 'WARNING': 'ERROR', 'INFO': 'INFO'}
 
@@ -114,7 +114,11 @@ class GBRIDGE_PT_object(bpy.types.Panel):
             layout.prop(props, "modifiers")
             layout.prop(props, "instances")
             layout.prop(props, "vertex_colors")
-        if role in ('PLACEHOLDER', 'MARKER', 'AREA', 'PATH'):
+        if role == 'INSTANCE' and obj.instance_collection:
+            layout.label(text="Asset: {}".format(entities.asset_name(obj.instance_collection)),
+                         icon='OUTLINER_COLLECTION')
+            layout.operator("gbridge.export_asset", icon='EXPORT')
+        if role in ('PLACEHOLDER', 'MARKER', 'AREA', 'PATH', 'INSTANCE', 'LIGHT'):
             layout.label(text="Props: propiedades personalizadas del objeto", icon='PROPERTIES')
 
         row = layout.row()

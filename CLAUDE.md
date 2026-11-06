@@ -49,7 +49,7 @@ Gotchas: instance matrices come from `depsgraph.object_instances` and must be co
 Extension-format addon that exports a Blender level (one room per `.blend`) to a Godot 4.7 project as a manifest + GLBs; the Godot side is the `addons/level_bridge/` plugin inside the game repo `/home/luis/GIT/personal/Godot/elegia/` (its own git repo, with its own CLAUDE.md and tests). Docs in Spanish.
 
 - `ANALISIS_Level_Bridge.md`: design and phases B0–B7. `FORMAT.md`: the manifest contract as implemented; change writer and reader together and update it. The joint order with the game phases is in `elegia/docs/plan_de_fases.md`.
-- Current phase: **B0–B3 implemented** (addon 0.4.0; B3 = Geometry Nodes instances → MultiMesh, `instances.py`): scope, uids, validation, static GLB via staging copies, placeholders/markers/colliders/areas/paths. Module map: `scope.py` (what is exported + roles), `entities.py` (manifest entities, shapes, props, uids), `validate.py`, `static_export.py` (staging + glTF), `coords.py` (Blender→Godot), `godot_project.py` (layer names from project.godot), `export.py` (operators + orchestration), `ui.py`.
+- Current phase: **B0–B4 implemented** (addon 0.5.0; B3 = Geometry Nodes instances → MultiMesh, `instances.py`; B4 = instanced collections → assets, `assets.py`): scope, uids, validation, static GLB via staging copies, placeholders/markers/colliders/areas/paths, instance and light entities. Module map: `scope.py` (what is exported + roles; `collect_collection` for assets), `entities.py` (manifest entities, shapes, props, uids), `validate.py`, `static_export.py` (staging + glTF), `assets.py` (AssetExporter: one `.asset.json` + `.glb` per collection, nested, hashed), `coords.py` (Blender→Godot), `godot_project.py` (layer names from project.godot), `export.py` (operators + orchestration), `ui.py`.
 
 ```bash
 cd "Godot Level Bridge"
@@ -69,6 +69,9 @@ blender --command extension validate godot_level_bridge
 - `GLTFState.filename` in Godot has no extension (matters for the import extension's file filter).
 - Geometry Nodes instances come in two kinds in `depsgraph.object_instances`: object instances (`inst.object.original` is the source) and geometry instances (`inst.object.original` is the host itself, `inst.object.data` is the instanced mesh). Copy `inst.object.data` during the iteration; `new_from_object(inst.object)` re-evaluates the host instead.
 - Headless Godot uses a dummy renderer: `MultiMesh.get_instance_transform()` returns identity there, so tests check the `.gmmi` contents instead.
+- Assets (B4): objects inside a collection excluded from the view layer still evaluate (`evaluated_get` gives the modified mesh), so asset collections can live excluded. For Geometry Nodes Collection Info instances, every object of one collection instance shares `persistent_id[1:]` (index 0 is the object inside the collection): group by that; the collection's world matrix is `inst.matrix_world @ (T(-instance_offset) @ src.matrix_world)⁻¹`.
+- glTF lights are useless for Godot (range 4096, energies 8–54000 depending on the lighting mode), so lights are manifest entities (`light`), W/100 → energy.
+- Staging mesh names are made stable (`<data name>.gbridge`): the glTF stores mesh names, and a `.001`/`.002` that depends on which other temporary copies exist rewrote unchanged GLBs.
 
 ## RustRemesher
 
