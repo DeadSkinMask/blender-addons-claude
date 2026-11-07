@@ -12,8 +12,8 @@ class GBRIDGE_Preferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
     godot_project_root: StringProperty(
-        name="Proyecto Godot", subtype='DIR_PATH',
-        description="Carpeta que contiene project.godot")
+        name="Godot project", subtype='DIR_PATH',
+        description="Folder that contains project.godot")
 
     def draw(self, context):
         self.layout.prop(self, "godot_project_root")
@@ -30,7 +30,7 @@ class GBRIDGE_PT_level(bpy.types.Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "Godot Level"
-    bl_label = "Nivel"
+    bl_label = "Level"
 
     def draw(self, context):
         layout = self.layout
@@ -45,7 +45,7 @@ class GBRIDGE_PT_level(bpy.types.Panel):
             layout.label(text=str(e), icon='ERROR')
 
         layout.prop(props, "root")
-        layout.prop(props, "level_name", placeholder="(nombre del .blend)")
+        layout.prop(props, "level_name", placeholder="(.blend file name)")
         # Blender paints a path field red while the folder does not exist yet;
         # the line below says where it resolves and whether export will create it.
         for attr in ("output_dir", "assets_dir"):
@@ -54,7 +54,7 @@ class GBRIDGE_PT_level(bpy.types.Panel):
                 text, icon = paths.describe_dir(root, getattr(props, attr))
                 layout.label(text=text, icon=icon)
 
-        col = layout.column(heading="Por defecto")
+        col = layout.column(heading="Defaults")
         col.prop(props, "modifiers")
         col.prop(props, "instances")
         col.prop(props, "vertex_colors")
@@ -69,9 +69,9 @@ class GBRIDGE_PT_level(bpy.types.Panel):
 def _draw_layers(layout, props, attr, names):
     """One checkbox per named Godot layer (the bit index is the layer number - 1)."""
     box = layout.box()
-    box.label(text="Capa" if attr == "layer" else "Máscara")
+    box.label(text="Layer" if attr == "layer" else "Mask")
     if not names:
-        box.label(text="Sin [layer_names] en project.godot", icon='INFO')
+        box.label(text="No [layer_names] in project.godot", icon='INFO')
         return
     grid = box.grid_flow(columns=2, even_columns=True)
     for number in sorted(names):
@@ -82,7 +82,7 @@ class GBRIDGE_PT_object(bpy.types.Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "Godot Level"
-    bl_label = "Objeto"
+    bl_label = "Object"
 
     @classmethod
     def poll(cls, context):
@@ -94,7 +94,7 @@ class GBRIDGE_PT_object(bpy.types.Panel):
         props = obj.gbridge
         layout.prop(props, "role")
         role = dict(scope.collect(context.scene, context.view_layer)).get(obj)
-        layout.label(text="Se exporta como: {}".format(role.lower() if role else "(no se exporta)"),
+        layout.label(text="Exported as: {}".format(role.lower().replace("_", " ") if role else "(not exported)"),
                      icon='EXPORT' if role else 'CANCEL')
         layout.prop(props, "skip")
 
@@ -109,7 +109,7 @@ class GBRIDGE_PT_object(bpy.types.Panel):
             names = godot_project.layer_names(root) if root else {}
             _draw_layers(layout, props, "layer", names)
             _draw_layers(layout, props, "mask", names)
-            layout.label(text="Sin marcar = por defecto (colisor: world; área: detecta player)", icon='INFO')
+            layout.label(text="None checked = default (collider: world; area: detects player)", icon='INFO')
         if role == 'STATIC':
             layout.prop(props, "modifiers")
             layout.prop(props, "instances")
@@ -119,7 +119,7 @@ class GBRIDGE_PT_object(bpy.types.Panel):
                          icon='OUTLINER_COLLECTION')
             layout.operator("gbridge.export_asset", icon='EXPORT')
         if role in ('PLACEHOLDER', 'MARKER', 'AREA', 'PATH', 'INSTANCE', 'LIGHT'):
-            layout.label(text="Props: propiedades personalizadas del objeto", icon='PROPERTIES')
+            layout.label(text="Props: the object's Custom Properties", icon='PROPERTIES')
 
         row = layout.row()
         row.enabled = False
@@ -130,7 +130,7 @@ class GBRIDGE_PT_collection(bpy.types.Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "Godot Level"
-    bl_label = "Colección activa"
+    bl_label = "Active collection"
 
     @classmethod
     def poll(cls, context):
@@ -147,12 +147,12 @@ class GBRIDGE_PT_validation(bpy.types.Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "Godot Level"
-    bl_label = "Validación"
+    bl_label = "Validation"
 
     def draw(self, context):
         layout = self.layout
         if not export.last_issues:
-            layout.label(text="Sin problemas (o aún sin validar)", icon='CHECKMARK')
+            layout.label(text="No issues (or not validated yet)", icon='CHECKMARK')
             return
         for issue in export.last_issues:
             row = layout.row(align=True)

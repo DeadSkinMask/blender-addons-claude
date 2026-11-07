@@ -6,7 +6,7 @@ import bpy
 
 from . import assets, coords, entities, instances, manifest, paths, scope, static_export, validate
 
-# Issues of the last validation/export, shown in the "Validación" panel.
+# Issues of the last validation/export, shown in the "Validation" panel.
 last_issues = []
 
 
@@ -35,7 +35,7 @@ def run_validation(context):
     """Collect, assign uids and validate. Returns (entries, issues, project_root)."""
     scene = context.scene
     if scene.gbridge.root is None:
-        raise paths.PathError("Elige la colección raíz del nivel")
+        raise paths.PathError("Choose the level's root collection")
     project_root = paths.project_root_from_prefs(get_prefs(context))
     context.view_layer.update()  # matrix_world must reflect pending transform edits
     entries = scope.collect(scene, context.view_layer)
@@ -61,7 +61,7 @@ def export_level(context):
     output_dir = paths.resolve_dir(scene.gbridge.output_dir)
     paths.to_res(project_root, output_dir)  # must be inside the project
     if validate.has_errors(issues):
-        raise ExportError("{} errores de validación".format(
+        raise ExportError("{} validation errors".format(
             sum(i.level == validate.ERROR for i in issues)))
 
     name = level_name(scene)
@@ -81,7 +81,7 @@ def export_level(context):
             return exporter.entry(collection)
         except ValueError as e:
             issues.append(validate.Issue(validate.ERROR, collection.name, str(e)))
-            raise ExportError("1 error de validación")
+            raise ExportError("1 validation error")
 
     try:
         by_policy = {}
@@ -162,8 +162,8 @@ def export_level(context):
 
 class GBRIDGE_OT_export_level(bpy.types.Operator):
     bl_idname = "gbridge.export_level"
-    bl_label = "Exportar nivel"
-    bl_description = "Exportar la colección raíz del nivel al proyecto Godot"
+    bl_label = "Export level"
+    bl_description = "Export the level's root collection to the Godot project"
 
     def execute(self, context):
         try:
@@ -172,19 +172,19 @@ class GBRIDGE_OT_export_level(bpy.types.Operator):
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
         except ExportError as e:
-            self.report({'ERROR'}, "{}: revisa el panel Validación".format(e))
+            self.report({'ERROR'}, "{}: see the Validation panel".format(e))
             return {'CANCELLED'}
         changed = result["written"] or result["static_written"]
-        self.report({'INFO'}, "Nivel {} ({} mallas estáticas, {} entidades): {}".format(
-            "exportado" if changed else "sin cambios",
+        self.report({'INFO'}, "Level {} ({} static meshes, {} entities): {}".format(
+            "exported" if changed else "unchanged",
             result["static"], result["entities"], result["path"]))
         return {'FINISHED'}
 
 
 class GBRIDGE_OT_validate(bpy.types.Operator):
     bl_idname = "gbridge.validate"
-    bl_label = "Validar"
-    bl_description = "Revisar el nivel sin exportar (asigna uids a las entidades nuevas)"
+    bl_label = "Validate"
+    bl_description = "Check the level without exporting (assigns uids to new entities)"
 
     def execute(self, context):
         try:
@@ -194,14 +194,14 @@ class GBRIDGE_OT_validate(bpy.types.Operator):
             return {'CANCELLED'}
         errors = sum(i.level == validate.ERROR for i in issues)
         self.report({'WARNING' if errors else 'INFO'},
-                    "{} errores, {} avisos".format(errors, sum(i.level == validate.WARNING for i in issues)))
+                    "{} errors, {} warnings".format(errors, sum(i.level == validate.WARNING for i in issues)))
         return {'FINISHED'}
 
 
 def export_asset(context, obj):
     """Export only the asset instanced by `obj` (and its nested assets). Returns the exporter."""
     if obj is None or obj.instance_type != 'COLLECTION' or obj.instance_collection is None:
-        raise paths.PathError("El objeto activo no instancia una colección")
+        raise paths.PathError("The active object does not instance a collection")
     project_root = paths.project_root_from_prefs(get_prefs(context))
     assets_dir = paths.resolve_dir(context.scene.gbridge.assets_dir)
     paths.to_res(project_root, assets_dir)
@@ -216,9 +216,9 @@ def export_asset(context, obj):
 
 class GBRIDGE_OT_export_asset(bpy.types.Operator):
     bl_idname = "gbridge.export_asset"
-    bl_label = "Exportar asset"
-    bl_description = ("Exportar solo el asset (colección) que instancia el objeto activo; "
-                      "en Godot, Rebuild de las salas que lo usan lo actualiza")
+    bl_label = "Export asset"
+    bl_description = ("Export only the asset (collection) instanced by the active object; "
+                      "in Godot, Rebuild of the rooms that use it updates them")
 
     @classmethod
     def poll(cls, context):
@@ -232,14 +232,14 @@ class GBRIDGE_OT_export_asset(bpy.types.Operator):
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
         self.report({'INFO'}, "Assets {}: {}".format(
-            "exportados" if exporter.written else "sin cambios", ", ".join(sorted(exporter.results))))
+            "exported" if exporter.written else "unchanged", ", ".join(sorted(exporter.results))))
         return {'FINISHED'}
 
 
 class GBRIDGE_OT_select_object(bpy.types.Operator):
     bl_idname = "gbridge.select_object"
-    bl_label = "Seleccionar"
-    bl_description = "Seleccionar el objeto de este problema"
+    bl_label = "Select"
+    bl_description = "Select the object of this issue"
     bl_options = {'INTERNAL'}
 
     name: bpy.props.StringProperty()
@@ -257,8 +257,8 @@ class GBRIDGE_OT_select_object(bpy.types.Operator):
 
 class GBRIDGE_OT_show_scope(bpy.types.Operator):
     bl_idname = "gbridge.show_scope"
-    bl_label = "Mostrar qué se exporta"
-    bl_description = "Seleccionar todo lo que entraría en el export"
+    bl_label = "Show what is exported"
+    bl_description = "Select everything the export would include"
 
     def execute(self, context):
         entries = scope.collect(context.scene, context.view_layer)
@@ -270,7 +270,7 @@ class GBRIDGE_OT_show_scope(bpy.types.Operator):
                 obj.select_set(True)
             counts[role] = counts.get(role, 0) + 1
         summary = ", ".join("{} {}".format(n, role.lower()) for role, n in sorted(counts.items()))
-        self.report({'INFO'}, summary or "Nada que exportar")
+        self.report({'INFO'}, summary or "Nothing to export")
         return {'FINISHED'}
 
 

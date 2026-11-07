@@ -5,6 +5,7 @@ collections excluded from the view layer or marked "skip" drop their whole
 content; objects marked "skip" are dropped; viewport visibility is ignored.
 A role comes from the object, else from the nearest collection with a role,
 else from the object type (meshes are static geometry, the rest is ignored).
+Collection instances (and lights inside an asset) ignore the collection role.
 """
 
 import bpy
@@ -19,6 +20,14 @@ def default_role(obj, in_asset=False):
     if obj.type == 'LIGHT' and in_asset:
         return 'LIGHT'
     return TYPE_DEFAULT_ROLES.get(obj.type)
+
+
+def _always_role(obj, in_asset):
+    """Roles the collection's default does not override: a collection instance is
+    always one (in a "Static geometry" collection it would otherwise become a
+    MultiMesh host), and so is a light inside an asset."""
+    role = default_role(obj, in_asset)
+    return role if role in ('INSTANCE', 'LIGHT') else None
 
 
 def _layer_collections(view_layer):
@@ -55,7 +64,7 @@ def collect_collection(root, layer_colls=None, in_asset=False):
             if obj.name in found or obj.gbridge.skip:
                 continue
             obj_role = obj.gbridge.role if obj.gbridge.role != 'AUTO' else (
-                role or default_role(obj, in_asset))
+                _always_role(obj, in_asset) or role or default_role(obj, in_asset))
             if obj_role:
                 found[obj.name] = (obj, obj_role)
         for child in sorted(collection.children, key=lambda c: c.name):

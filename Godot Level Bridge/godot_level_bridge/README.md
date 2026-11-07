@@ -8,26 +8,28 @@ Estado: **fases B0–B4** — geometría estática (con colores de vértice), pl
 
 1. `./build_zip.sh` genera `godot_level_bridge-<versión>.zip`.
 2. Blender → Edit → Preferences → Get Extensions → menú ⌄ → **Install from Disk** → el ZIP.
-3. En las preferencias del addon, **Proyecto Godot**: la carpeta que contiene `project.godot`.
+3. En las preferencias del addon, **Godot project**: la carpeta que contiene `project.godot`.
+
+La interfaz del addon está en inglés (desde 0.5.1, como Blender del usuario); esta guía da los nombres tal como aparecen.
 
 **Actualizar a una versión nueva:** primero desinstalar la anterior (Get Extensions → la extensión → ⌄ → **Uninstall**) y después instalar el ZIP nuevo. Instalar encima puede dejar en uso el código anterior aunque el panel muestre la versión nueva. Para comprobar con qué versión se exportó: en Godot, las mallas de un GLB de 0.2.2 o posterior se llaman `<nivel>_<malla>`, no `gbridge_staging_<malla>`.
 
 ## Uso
 
 1. Guarda el `.blend` en `levels/<área>/<sala>/source/<sala>.blend` dentro del proyecto Godot.
-2. Pestaña **Godot Level** del sidebar (`N`) → **Nivel**: elige la colección raíz.
-3. Organiza con sub-colecciones y dales un **rol por defecto** (panel Colección activa): p. ej. `Colisiones` → Colisor, `Paths` → Path. Las mallas sin rol son geometría estática.
-4. Ajusta lo propio de cada objeto en el panel **Objeto** (aparece según su rol):
-   - **Placeholder** (un empty): `Escena` = `res://….tscn`. Sus props son las propiedades personalizadas del objeto (Object Properties → Custom Properties); una propiedad que apunta a otro objeto exportado llega a Godot como `NodePath`.
-   - **Marcador**: props como metadata del `Marker3D` (p. ej. `entry_id = "default"` para el punto de entrada de la sala).
-   - **Geometría estática — Instancias** (scatters de Geometry Nodes): **MultiMesh** (por defecto): solo las instancias, como MultiMesh por trozos de 20 m (ajustable en el panel Nivel); la geometría propia del objeto (el camino guía, etc.) no se exporta. **Realizar**: cada instancia como un nodo de la geometría estática con la malla compartida, más la geometría del objeto. **Ignorar**: solo la geometría del objeto.
-   - **Geometría estática — Colores de vértice**: **Datos** (por defecto de la escena): se exportan como `COLOR_0` y el material de Godot no los usa, para máscaras o shaders propios. **Albedo**: el material de Godot los multiplica por el albedo (si otras mallas comparten ese material, esta usa una copia `<material>_vertex_color`). **No exportar**: se quitan.
-   - **Colisor / Área**: forma (caja, esfera, cápsula, cilindro, convexa, trimesh) ajustada a la caja del objeto con la escala horneada; capa y máscara con los nombres del `project.godot` (sin marcar = por defecto: colisor en `world`, área que detecta `player`); "Grupo de cuerpo" para que varios colisores compartan cuerpo.
+2. Pestaña **Godot Level** del sidebar (`N`) → panel **Level**: elige la **Root collection**.
+3. Organiza con sub-colecciones y dales un **Default role** (panel **Active collection**): p. ej. `Colisiones` → Collider, `Paths` → Path. Las mallas sin rol son geometría estática (Static geometry). Los empties que instancian una colección son siempre **Collection instance**, tenga el rol que tenga su colección.
+4. Ajusta lo propio de cada objeto en el panel **Object** (aparece según su **Role**):
+   - **Placeholder** (un empty): **Scene** = `res://….tscn`. Sus props son las propiedades personalizadas del objeto (Object Properties → Custom Properties); una propiedad que apunta a otro objeto exportado llega a Godot como `NodePath`.
+   - **Marker**: props como metadata del `Marker3D` (p. ej. `entry_id = "default"` para el punto de entrada de la sala).
+   - **Static geometry — Instances** (scatters de Geometry Nodes): **MultiMesh** (por defecto): solo las instancias, como MultiMesh por trozos de 20 m (ajustable en el panel Nivel); la geometría propia del objeto (el camino guía, etc.) no se exporta. **Realize**: cada instancia como un nodo de la geometría estática con la malla compartida, más la geometría del objeto. **Ignore**: solo la geometría del objeto. **Scenes**: ver "Assets".
+   - **Static geometry — Vertex colors**: **Data** (por defecto de la escena): se exportan como `COLOR_0` y el material de Godot no los usa, para máscaras o shaders propios. **Albedo**: el material de Godot los multiplica por el albedo (si otras mallas comparten ese material, esta usa una copia `<material>_vertex_color`). **Don't export**: se quitan. Si los colores no se ven en Godot, lo normal es que esté en **Data**: pásalo a **Albedo** (en el objeto, o el valor por defecto en el panel Level).
+   - **Collider / Area**: **Shape** (caja, esfera, cápsula, cilindro, convexa, trimesh) ajustada a la caja del objeto con la escala horneada; capa y máscara con los nombres del `project.godot` (sin marcar = por defecto: colisor en `world`, área que detecta `player`); **Body group** para que varios colisores compartan cuerpo.
    - **Path**: una curva; Bézier con manijas, poly y NURBS por sus puntos.
-   - **Instancia de colección** (rol automático de un empty que instancia una colección): se exporta como instancia del **asset**; ver "Assets" abajo. Sus propiedades personalizadas llegan como metadata de la instancia.
-   - **Luz** (rol automático de las luces dentro de un asset; en el nivel hay que ponérselo): punto → `OmniLight3D`, foco → `SpotLight3D`. Energía = W / 100, alcance = "Custom Distance" (o 10 m), sombra = "Shadow". Ajustes finos con propiedades personalizadas con el nombre de la propiedad de Godot (`omni_attenuation`, `light_energy`…).
+   - **Collection instance** (rol automático de un empty que instancia una colección): se exporta como instancia del **asset**; ver "Assets" abajo. Sus propiedades personalizadas llegan como metadata de la instancia.
+   - **Light** (rol automático de las luces dentro de un asset; en el nivel hay que ponérselo): punto → `OmniLight3D`, foco → `SpotLight3D`. Energía = W / 100, alcance = "Custom Distance" (o 10 m), sombra = "Shadow". Ajustes finos con propiedades personalizadas con el nombre de la propiedad de Godot (`omni_attenuation`, `light_energy`…).
    - Para copiar ajustes a varios objetos: selecciónalos, clic derecho sobre el campo del activo → **Copy to Selected**.
-5. **Mostrar qué se exporta** selecciona todo lo que entra; **Validar** revisa sin exportar; **Exportar nivel** escribe el manifiesto y el GLB.
+5. **Show what is exported** selecciona todo lo que entra; **Validate** revisa sin exportar; **Export level** escribe el manifiesto y el GLB.
 6. En Godot: selecciona el `LevelBuilder` de la sala → **Rebuild** → **guarda la escena** (Ctrl+S). Los colisores, marcadores y placeholders viven en la escena; la geometría visual en el GLB, que Godot reimporta solo. Si no guardas, el juego usa los colisores anteriores (el builder avisa en la consola).
 
 **Duplicados:** objetos con la misma geometría final comparten la malla también en Godot: Alt+D (aunque tengan modificadores, si dan el mismo resultado) e incluso copias independientes idénticas. Las columnas de la sala de ejemplo son mallas independientes pero idénticas (misma forma y mismo degradado), así que también comparten al exportar con 0.2.2. Esto ahorra memoria pero sigue siendo un `MeshInstance3D` por objeto: para cientos de copias, Geometry Nodes → MultiMesh (fase 3); para un asset con colisiones o luces que se edita una vez, colecciones instanciadas (fase 4).
@@ -40,9 +42,9 @@ Para elementos que se repiten y tienen algo más que malla (una antorcha con su 
 
 1. Modela el asset en su propia **colección** (p. ej. `Antorcha`), dentro de una colección `Assets` **fuera de la colección raíz** del nivel; exclúyela del view layer (casilla del outliner) para que no se vea dos veces. Su contenido se exporta igual aunque esté excluida.
 2. El **origen** del asset es el "Instance Offset" de la colección (Propiedades de la colección → Instancing). Lo más simple: modelarlo en el origen del mundo.
-3. Dentro, los roles funcionan igual que en el nivel: mallas → geometría, un cubo con rol Colisor → colisión, luces → luz, placeholders, marcadores…
-4. Colócalo en el nivel con **Add → Collection Instance → Antorcha** (un empty que instancia la colección) tantas veces como quieras, o con **Geometry Nodes** (nodo Collection Info) y la opción de instancias **Escenas** en el objeto que las genera: cada instancia de la colección pasa a ser una instancia de la escena; las demás instancias del objeto siguen como MultiMesh, y la malla propia del objeto (p. ej. el muro) se exporta.
-5. **Exportar nivel** escribe el asset en la carpeta de assets (`_kit/bridge_assets/` del área): `Antorcha.asset.json` + `Antorcha.glb`. Para actualizar solo el asset: selecciona una instancia → panel Objeto → **Exportar asset**.
+3. Dentro, los roles funcionan igual que en el nivel: mallas → geometría, un cubo con Role = Collider → colisión, luces → luz, placeholders, marcadores… Los colores de vértice siguen el modo de cada malla (**Vertex colors**: Data por defecto; **Albedo** para verlos).
+4. Colócalo en el nivel con **Add → Collection Instance → Antorcha** (visor 3D, menú Add o Shift+A) (un empty que instancia la colección) tantas veces como quieras, o con **Geometry Nodes** (nodo Collection Info) y la opción **Instances = Scenes** en el objeto que las genera: cada instancia de la colección pasa a ser una instancia de la escena; las demás instancias del objeto siguen como MultiMesh, y la malla propia del objeto (p. ej. el muro) se exporta.
+5. **Exportar nivel** escribe el asset en la carpeta de assets (`_kit/bridge_assets/` del área): `Antorcha.asset.json` + `Antorcha.glb`. Para actualizar solo el asset: selecciona una instancia → panel Object → **Export asset**.
 6. En Godot, **Rebuild** de la sala genera `Antorcha.tscn` junto a ellos (solo si el asset cambió) y cada instancia del nivel es una instancia de esa escena: editar el asset en Blender, exportar y hacer Rebuild actualiza todas sus copias, también en las otras salas que lo usan (esas avisan al abrirse que hay que hacer Rebuild). No edites `Antorcha.tscn` a mano: se sobrescribe.
 
 Los objetos con la misma malla (Alt+D) **no** se convierten en assets: siguen en la geometría estática compartiendo la malla.
@@ -71,6 +73,6 @@ B1–B2 (0.2.0–0.3.0):
 - [x] B3 (0.4.0): un scatter de Geometry Nodes aparece en Godot como MultiMesh, sin la geometría guía del objeto; con "Realizar" sale como nodos estáticos.
 - [ ] B4 (0.5.0): en la sala de guardado (`catedral_05`) las dos antorchas son instancias de `levels/catedral/_kit/bridge_assets/Antorcha.tscn` y alumbran.
 - [ ] B4: crear un asset propio (colección + Collection Instance), exportar, Rebuild: aparece; cambiarlo en Blender (mover una pieza o la luz), exportar, Rebuild: cambian todas las copias.
-- [ ] B4: un muro con Geometry Nodes (Collection Info) y opción "Escenas": el muro llega como geometría y cada antorcha como instancia.
-- [ ] B4: el botón "Exportar asset" del panel Objeto (con una instancia seleccionada).
+- [ ] B4: un muro con Geometry Nodes (Collection Info) y opción "Scenes": el muro llega como geometría y cada antorcha como instancia.
+- [ ] B4: el botón "Export asset" del panel Object (con una instancia seleccionada).
 - [x] Modo de colores de vértice (0.3.0): un objeto en "Albedo" se ve con sus colores en Godot (material `<material>_vertex_color`); uno en "Datos" (por defecto) conserva su material sin teñir.

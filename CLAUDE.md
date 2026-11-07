@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Layout
 
-Git repo `blender-addons-claude` (remote `origin` on GitHub, branch `master`): a folder of independent Blender 5.2 addon projects, one subfolder each. Built ZIPs are committed (the repo is for addons in general and the user installs from them); `test_log.txt` and screenshots are gitignored. Keep projects self-contained; don't share code between them. Code and comments in English, user-facing UI strings in Spanish (Sculpt Brush Shelf, Godot Level Bridge) — match the project you are in.
+Git repo `blender-addons-claude` (remote `origin` on GitHub, branch `master`): a folder of independent Blender 5.2 addon projects, one subfolder each. Built ZIPs are committed (the repo is for addons in general and the user installs from them); `test_log.txt` and screenshots are gitignored. Keep projects self-contained; don't share code between them. Code and comments in English, user-facing UI strings in Spanish for Sculpt Brush Shelf and RustRemesher, in English for Godot Level Bridge (since 0.5.1: the user runs Blender in English; its docs stay in Spanish but quote the English labels) — match the project you are in.
 
 Blender 5.2.3 is installed at `/opt/blender-5.2.3-linux-x64/blender` (also `blender` on PATH). Target API is Blender 5.2 only; verify API names by running Blender (`blender -b --factory-startup --python-expr ...`), not from older docs.
 
@@ -46,10 +46,10 @@ Gotchas: instance matrices come from `depsgraph.object_instances` and must be co
 
 ## Godot Level Bridge
 
-Extension-format addon that exports a Blender level (one room per `.blend`) to a Godot 4.7 project as a manifest + GLBs; the Godot side is the `addons/level_bridge/` plugin inside the game repo `/home/luis/GIT/personal/Godot/elegia/` (its own git repo, with its own CLAUDE.md and tests). Docs in Spanish.
+Extension-format addon that exports a Blender level (one room per `.blend`) to a Godot 4.7 project as a manifest + GLBs; the Godot side is the `addons/level_bridge/` plugin inside the game repo `/home/luis/GIT/personal/Godot/elegia/` (its own git repo, with its own CLAUDE.md and tests). Docs in Spanish, UI in English. Roles: an empty instancing a collection is always INSTANCE (and a light inside an asset always LIGHT) regardless of its collection's default role (`scope._always_role`).
 
 - `ANALISIS_Level_Bridge.md`: design and phases B0–B7. `FORMAT.md`: the manifest contract as implemented; change writer and reader together and update it. The joint order with the game phases is in `elegia/docs/plan_de_fases.md`.
-- Current phase: **B0–B4 implemented** (addon 0.5.0; B3 = Geometry Nodes instances → MultiMesh, `instances.py`; B4 = instanced collections → assets, `assets.py`): scope, uids, validation, static GLB via staging copies, placeholders/markers/colliders/areas/paths, instance and light entities. Module map: `scope.py` (what is exported + roles; `collect_collection` for assets), `entities.py` (manifest entities, shapes, props, uids), `validate.py`, `static_export.py` (staging + glTF), `assets.py` (AssetExporter: one `.asset.json` + `.glb` per collection, nested, hashed), `coords.py` (Blender→Godot), `godot_project.py` (layer names from project.godot), `export.py` (operators + orchestration), `ui.py`.
+- Current phase: **B0–B4 implemented** (addon 0.5.1; B3 = Geometry Nodes instances → MultiMesh, `instances.py`; B4 = instanced collections → assets, `assets.py`): scope, uids, validation, static GLB via staging copies, placeholders/markers/colliders/areas/paths, instance and light entities. Module map: `scope.py` (what is exported + roles; `collect_collection` for assets), `entities.py` (manifest entities, shapes, props, uids), `validate.py`, `static_export.py` (staging + glTF), `assets.py` (AssetExporter: one `.asset.json` + `.glb` per collection, nested, hashed), `coords.py` (Blender→Godot), `godot_project.py` (layer names from project.godot), `export.py` (operators + orchestration), `ui.py`.
 
 ```bash
 cd "Godot Level Bridge"

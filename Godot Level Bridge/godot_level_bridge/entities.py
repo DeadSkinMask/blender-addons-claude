@@ -46,7 +46,7 @@ def ensure_uids(objects):
         for obj in owners:
             if obj is not keeper:
                 obj.gbridge.uid = ""
-                changes.append((obj.name, "uid duplicado de {} (copia): se asigna uno nuevo".format(keeper.name)))
+                changes.append((obj.name, "uid duplicated from {} (a copy): a new one is assigned".format(keeper.name)))
     for obj in objects:
         if not obj.gbridge.uid:
             obj.gbridge.uid = new_uid(taken)
@@ -70,7 +70,7 @@ def prop_value(value, uid_of):
     if isinstance(value, bpy.types.Object):
         uid = uid_of(value)
         if uid is None:
-            raise ValueError("apunta a {}, que no se exporta como entidad".format(value.name))
+            raise ValueError("points to {}, which is not exported as an entity".format(value.name))
         return {"$ref": uid}
     if isinstance(value, bool):
         return value
@@ -84,7 +84,7 @@ def prop_value(value, uid_of):
         return [prop_value(v, uid_of) for v in value.to_list()]
     if isinstance(value, (list, tuple)):
         return [prop_value(v, uid_of) for v in value]
-    raise ValueError("tipo de propiedad no soportado: {}".format(type(value).__name__))
+    raise ValueError("unsupported property type: {}".format(type(value).__name__))
 
 
 def props(obj, uid_of):

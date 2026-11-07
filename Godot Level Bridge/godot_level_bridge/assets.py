@@ -84,7 +84,7 @@ class AssetExporter:
         name = entities.asset_name(collection)
         other = self._sources.get(name)
         if other is not None and other is not collection:
-            raise ValueError("las colecciones {} y {} dan el mismo nombre de asset '{}'".format(
+            raise ValueError("collections {} and {} give the same asset name '{}'".format(
                 other.name, collection.name, name))
         if name not in self.results:
             self._sources[name] = collection

@@ -119,8 +119,8 @@ def t_res_paths():
     root = os.path.join(WORK, "proj")
     assert p.to_res(root, root) == "res://"
     assert p.to_res(root, os.path.join(root, "levels", "a.json")) == "res://levels/a.json"
-    raises(p.PathError, lambda: p.to_res(root, os.path.join(WORK, "other")), "fuera del proyecto")
-    raises(p.PathError, lambda: p.to_res(root, os.path.join(WORK, "proj_sibling")), "fuera del proyecto")
+    raises(p.PathError, lambda: p.to_res(root, os.path.join(WORK, "other")), "outside the Godot project")
+    raises(p.PathError, lambda: p.to_res(root, os.path.join(WORK, "proj_sibling")), "outside the Godot project")
     assert p.from_res(root, "res://levels/a.json") == os.path.join(root, "levels", "a.json")
 
 
@@ -139,9 +139,9 @@ def t_coords():
 
 
 def t_requires_root_collection():
-    raises(mod.paths.PathError, lambda: mod.export.export_level(bpy.context), "colección raíz")
+    raises(mod.paths.PathError, lambda: mod.export.export_level(bpy.context), "root collection")
     # An operator that reports ERROR raises RuntimeError when called from Python.
-    raises(RuntimeError, lambda: bpy.ops.gbridge.export_level(), "colección raíz")
+    raises(RuntimeError, lambda: bpy.ops.gbridge.export_level(), "root collection")
 
 
 def t_requires_project_root():
@@ -149,10 +149,10 @@ def t_requires_project_root():
     bpy.context.scene.collection.children.link(empty)
     bpy.context.scene.gbridge.root = empty
     prefs().godot_project_root = ""
-    raises(mod.paths.PathError, lambda: mod.export.export_level(bpy.context), "preferencias")
+    raises(mod.paths.PathError, lambda: mod.export.export_level(bpy.context), "add-on preferences")
     os.makedirs(PROJECT, exist_ok=True)
     prefs().godot_project_root = PROJECT
-    raises(mod.paths.PathError, lambda: mod.export.export_level(bpy.context), "No hay project.godot")
+    raises(mod.paths.PathError, lambda: mod.export.export_level(bpy.context), "No project.godot")
     with open(os.path.join(PROJECT, "project.godot"), "w") as f:
         f.write(PROJECT_GODOT)
     receiver = mod.paths.from_res(PROJECT, RECEIVER)
@@ -162,7 +162,7 @@ def t_requires_project_root():
 
 def t_requires_saved_blend():
     assert not bpy.data.filepath
-    raises(mod.paths.PathError, lambda: mod.export.export_level(bpy.context), "Guarda el .blend")
+    raises(mod.paths.PathError, lambda: mod.export.export_level(bpy.context), "Save the .blend")
 
 
 def t_export_empty_level():
@@ -201,7 +201,7 @@ def t_level_name_override():
 def t_output_outside_project():
     scene = bpy.context.scene
     scene.gbridge.output_dir = os.path.join(WORK, "elsewhere")
-    raises(mod.paths.PathError, lambda: mod.export.export_level(bpy.context), "fuera del proyecto")
+    raises(mod.paths.PathError, lambda: mod.export.export_level(bpy.context), "outside the Godot project")
     scene.gbridge.output_dir = "//../generated/"
 
 
@@ -472,8 +472,8 @@ def t_export_sample_level():
     result = mod.export.export_level(bpy.context)
     assert result["written"] and result["static_written"], result
     warnings = [(i.object, i.message) for i in result["issues"] if i.level != 'INFO']
-    assert warnings == [("Floor", "escala no uniforme sin aplicar"),
-                        ("Palo (Antorcha)", "escala no uniforme sin aplicar")], warnings
+    assert warnings == [("Floor", "non-uniform scale not applied"),
+                        ("Palo (Antorcha)", "non-uniform scale not applied")], warnings
     data = read_json(MANIFEST)
     assert data["static_scene"] == "room_a_static.glb"
     assert [e["name"] for e in data["entities"]] == \
@@ -596,7 +596,7 @@ def t_instance_policies():
         assert len({nodes[n]["mesh"] for n in realized}) == 1, "realized instances should share one mesh"
         scatter.gbridge.instances = 'IGNORE'
         result = mod.export.export_level(bpy.context)
-        assert any(i.object == "Scatter" and "ignoradas" in i.message for i in result["issues"])
+        assert any(i.object == "Scatter" and "ignored" in i.message for i in result["issues"])
         static = glb_json(os.path.join(folder, "room_a_static.glb"))
         names = [n["name"] for n in static["nodes"]]
         assert "Scatter" in names, "Ignore drops the instances, not the host's own geometry"
@@ -668,13 +668,32 @@ def t_export_asset_operator():
     raises(RuntimeError, lambda: bpy.ops.gbridge.export_asset())
 
 
+def t_instance_in_a_static_collection():
+    """A collection instance inside a collection whose default role is Static
+    geometry is still an instance (it used to become a MultiMesh host)."""
+    geo = bpy.data.collections["Geometria"]
+    geo.gbridge.role = 'STATIC'
+    torch = bpy.data.collections["Antorcha"]
+    torch.gbridge.role = 'STATIC'  # a light inside the asset stays a light
+    try:
+        roles = dict(mod.scope.collect(bpy.context.scene, bpy.context.view_layer))
+        assert roles[bpy.data.objects["Antorcha1"]] == 'INSTANCE', roles[bpy.data.objects["Antorcha1"]]
+        asset_roles = dict(mod.scope.collect_collection(torch, in_asset=True))
+        assert asset_roles[bpy.data.objects["Llama"]] == 'LIGHT'
+        _entries, issues, _root = mod.export.run_validation(bpy.context)
+        assert not [i for i in issues if "without geometry" in i.message], issues
+    finally:
+        geo.gbridge.role = 'NONE'
+        torch.gbridge.role = 'NONE'
+
+
 def t_asset_inside_root_warns():
     torch = bpy.data.collections["Antorcha"]
     root = bpy.context.scene.gbridge.root
     root.children.link(torch)
     try:
         _entries, issues, _root = mod.export.run_validation(bpy.context)
-        assert any(i.object == "Antorcha" and "dentro de la raíz" in i.message for i in issues), issues
+        assert any(i.object == "Antorcha" and "inside the root" in i.message for i in issues), issues
     finally:
         root.children.unlink(torch)
 
@@ -723,7 +742,7 @@ def t_duplicate_uid_is_reassigned():
     result = mod.export.export_level(bpy.context)
     assert spawn.gbridge.uid == "e0000001", spawn.gbridge.uid
     assert dup.gbridge.uid and dup.gbridge.uid != "e0000001"
-    assert any(i.object == "Spawn2" and "duplicado" in i.message for i in result["issues"])
+    assert any(i.object == "Spawn2" and "duplicated" in i.message for i in result["issues"])
     bpy.data.objects.remove(dup)
     mod.export.export_level(bpy.context)
 
@@ -732,7 +751,7 @@ def t_validation_errors_block_export():
     receiver = bpy.data.objects["Receiver"]
     before = open(MANIFEST, encoding="utf-8").read()
     receiver.gbridge.scene = "res://missing.tscn"
-    raises(mod.export.ExportError, lambda: mod.export.export_level(bpy.context), "errores")
+    raises(mod.export.ExportError, lambda: mod.export.export_level(bpy.context), "errors")
     assert any(i.level == 'ERROR' and i.object == "Receiver" for i in mod.export.last_issues)
     receiver.gbridge.scene = RECEIVER
     receiver.scale = (1, 2, 1)
@@ -816,6 +835,7 @@ for name, fn in [
     ("geometry_nodes_scenes", t_geometry_nodes_scenes),
     ("asset_hash_follows_content", t_asset_hash_follows_content),
     ("export_asset_operator", t_export_asset_operator),
+    ("instance_in_a_static_collection", t_instance_in_a_static_collection),
     ("asset_inside_root_warns", t_asset_inside_root_warns),
     ("reexport_sample_unchanged", t_reexport_sample_unchanged),
     ("duplicate_uid_is_reassigned", t_duplicate_uid_is_reassigned),
