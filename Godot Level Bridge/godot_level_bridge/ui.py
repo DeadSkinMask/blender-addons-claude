@@ -3,7 +3,7 @@
 import bpy
 from bpy.props import StringProperty
 
-from . import entities, export, godot_project, paths, scope
+from . import assets, entities, export, godot_project, paths, scope
 
 ISSUE_ICONS = {'ERROR': 'ERROR', 'WARNING': 'ERROR', 'INFO': 'INFO'}
 
@@ -94,8 +94,13 @@ class GBRIDGE_PT_object(bpy.types.Panel):
         props = obj.gbridge
         layout.prop(props, "role")
         role = dict(scope.collect(context.scene, context.view_layer)).get(obj)
-        layout.label(text="Exported as: {}".format(role.lower().replace("_", " ") if role else "(not exported)"),
-                     icon='EXPORT' if role else 'CANCEL')
+        asset = None
+        if role is None:  # outside the level root: maybe a piece of an asset
+            asset, role = assets.role_in_asset(obj)
+        text = role.lower().replace("_", " ") if role else "(not exported)"
+        if asset is not None and role:
+            text += " (in asset {})".format(entities.asset_name(asset))
+        layout.label(text="Exported as: " + text, icon='EXPORT' if role else 'CANCEL')
         layout.prop(props, "skip")
 
         if role in ('PLACEHOLDER', 'AREA'):
@@ -141,6 +146,10 @@ class GBRIDGE_PT_collection(bpy.types.Panel):
         layout.label(text=context.collection.name, icon='OUTLINER_COLLECTION')
         layout.prop(context.collection.gbridge, "role")
         layout.prop(context.collection.gbridge, "skip")
+        if context.collection in assets.candidate_collections():
+            layout.label(text="Asset: {}".format(entities.asset_name(context.collection)), icon='PACKAGE')
+            op = layout.operator("gbridge.export_asset", icon='EXPORT')
+            op.collection = context.collection.name
 
 
 class GBRIDGE_PT_validation(bpy.types.Panel):

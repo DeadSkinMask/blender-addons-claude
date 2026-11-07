@@ -66,6 +66,15 @@ def asset_of(obj, candidates):
     return best
 
 
+def role_in_asset(obj):
+    """(asset collection, role) of an object that lives inside an asset collection,
+    or (None, None). Used by the Object panel for objects outside the level root."""
+    collection = asset_of(obj, candidate_collections())
+    if collection is None:
+        return None, None
+    return collection, dict(scope.collect_collection(collection, in_asset=True)).get(obj)
+
+
 class AssetExporter:
     """Exports assets once per run (nested ones included). `results` maps the
     asset name to its manifest entry {"manifest": res path, "hash": sha1}."""

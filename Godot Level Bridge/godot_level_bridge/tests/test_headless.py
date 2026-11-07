@@ -668,6 +668,18 @@ def t_export_asset_operator():
     raises(RuntimeError, lambda: bpy.ops.gbridge.export_asset())
 
 
+def t_asset_pieces_and_collection_export():
+    """Objects of an asset (outside the root) get their asset role for the Object
+    panel, and the asset can be exported from its collection."""
+    collection, role = mod.assets.role_in_asset(bpy.data.objects["Palo"])
+    assert collection == bpy.data.collections["Antorcha"] and role == 'STATIC', (collection, role)
+    assert mod.assets.role_in_asset(bpy.data.objects["Llama"])[1] == 'LIGHT'
+    assert mod.assets.role_in_asset(bpy.data.objects["Floor"]) == (None, None)
+    exporter = mod.export.export_asset(bpy.context, bpy.data.collections["Antorcha"])
+    assert sorted(exporter.results) == ["Antorcha"]
+    assert bpy.ops.gbridge.export_asset(collection="Antorcha") == {'FINISHED'}
+
+
 def t_instance_in_a_static_collection():
     """A collection instance inside a collection whose default role is Static
     geometry is still an instance (it used to become a MultiMesh host)."""
@@ -835,6 +847,7 @@ for name, fn in [
     ("geometry_nodes_scenes", t_geometry_nodes_scenes),
     ("asset_hash_follows_content", t_asset_hash_follows_content),
     ("export_asset_operator", t_export_asset_operator),
+    ("asset_pieces_and_collection_export", t_asset_pieces_and_collection_export),
     ("instance_in_a_static_collection", t_instance_in_a_static_collection),
     ("asset_inside_root_warns", t_asset_inside_root_warns),
     ("reexport_sample_unchanged", t_reexport_sample_unchanged),

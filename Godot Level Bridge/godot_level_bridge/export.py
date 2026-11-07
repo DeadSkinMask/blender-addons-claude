@@ -198,17 +198,20 @@ class GBRIDGE_OT_validate(bpy.types.Operator):
         return {'FINISHED'}
 
 
-def export_asset(context, obj):
-    """Export only the asset instanced by `obj` (and its nested assets). Returns the exporter."""
-    if obj is None or obj.instance_type != 'COLLECTION' or obj.instance_collection is None:
-        raise paths.PathError("The active object does not instance a collection")
+def export_asset(context, target):
+    """Export only one asset (and its nested assets): `target` is the asset
+    collection or an object instancing it. Returns the exporter."""
+    collection = target if isinstance(target, bpy.types.Collection) else (
+        target.instance_collection if target is not None and target.instance_type == 'COLLECTION' else None)
+    if collection is None:
+        raise paths.PathError("Select an instance of the asset, or make its collection the active one")
     project_root = paths.project_root_from_prefs(get_prefs(context))
     assets_dir = paths.resolve_dir(context.scene.gbridge.assets_dir)
     paths.to_res(project_root, assets_dir)
     context.view_layer.update()
     exporter = assets.AssetExporter(context, assets_dir, project_root)
     try:
-        exporter.entry(obj.instance_collection)
+        exporter.entry(collection)
     except ValueError as e:
         raise paths.PathError(str(e))
     return exporter
@@ -217,17 +220,16 @@ def export_asset(context, obj):
 class GBRIDGE_OT_export_asset(bpy.types.Operator):
     bl_idname = "gbridge.export_asset"
     bl_label = "Export asset"
-    bl_description = ("Export only the asset (collection) instanced by the active object; "
+    bl_description = ("Export only this asset (collection), without the level; "
                       "in Godot, Rebuild of the rooms that use it updates them")
 
-    @classmethod
-    def poll(cls, context):
-        obj = context.object
-        return obj is not None and obj.instance_type == 'COLLECTION' and obj.instance_collection is not None
+    collection: bpy.props.StringProperty(
+        name="Collection", description="Asset collection; empty = the one the active object instances")
 
     def execute(self, context):
+        target = bpy.data.collections.get(self.collection) if self.collection else context.object
         try:
-            exporter = export_asset(context, context.object)
+            exporter = export_asset(context, target)
         except paths.PathError as e:
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
