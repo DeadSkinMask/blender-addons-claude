@@ -813,6 +813,137 @@ def t_sample_fixture_for_godot():
     assert produced == read_json(fixture), "Godot fixture is stale: run with UPDATE_FIXTURES=1"
 
 
+ENEMY = "res://entities/enemies/bat/bat.tscn"
+GATE = "res://entities/triggers/gate/gate.tscn"
+TEST_CATALOG = {
+    "format": "gbridge-catalog", "version": 1, "root": "res://entities/",
+    "scenes": [
+        {"scene": ENEMY, "name": "bat", "category": "enemies", "type": "CharacterBody3D", "kind": "placeholder",
+         "aabb": {"position": [-0.35, 0.0, -0.25], "size": [0.7, 1.6, 0.5]},
+         "props": [
+             {"name": "speed", "type": "float", "default": 1.5, "hint": "range", "hint_string": "0,10,0.5"},
+             {"name": "health", "type": "int", "default": 30},
+             {"name": "mode", "type": "int", "default": 1, "enum": [["Idle", 0], ["Patrol", 1], ["Chase", 5]]},
+             {"name": "aggressive", "type": "bool", "default": True},
+             {"name": "label", "type": "string", "default": "bat"},
+             {"name": "offset", "type": "vector3", "default": [0.0, 1.0, 0.0]},
+             {"name": "tint", "type": "color", "default": [1.0, 0.5, 0.25, 1.0]},
+             {"name": "target", "type": "node_path", "default": ""},
+             {"name": "drop", "type": "resource", "class": "Resource", "default": None},
+         ]},
+        {"scene": GATE, "name": "gate", "category": "triggers", "type": "Area3D", "kind": "area",
+         "aabb": {"position": [0, 0, 0], "size": [0, 0, 0]},
+         "props": [{"name": "target_room", "type": "string", "default": "", "hint": "file", "hint_string": "*.tscn"}]},
+    ],
+}
+
+
+def _write_catalog(data):
+    with open(os.path.join(PROJECT, "bridge_catalog.json"), "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    mod.catalog.clear_cache()
+
+
+def t_catalog_load():
+    cat = mod.catalog
+    _write_catalog({"format": "something-else"})
+    raises(cat.CatalogError, lambda: cat.load(PROJECT), "not a gbridge-catalog")
+    _write_catalog(TEST_CATALOG)
+    data = cat.load(PROJECT)
+    assert [cat.label(e) for e in data["scenes"]] == ["enemies/bat", "triggers/gate"]
+    assert cat.load(PROJECT) is data, "cached by mtime"
+    assert cat.entry_for(data, GATE)["kind"] == "area" and cat.entry_for(data, "res://nope.tscn") is None
+    lo, hi = cat.blender_box(cat.entry_for(data, ENEMY))
+    # Godot x -0.35..0.35, y 0..1.6, z -0.25..0.25 → Blender x same, y = -z, z = y.
+    assert close(lo, [-0.35, -0.25, 0.0]) and close(hi, [0.35, 0.25, 1.6]), (lo, hi)
+    assert cat.blender_box(cat.entry_for(data, GATE)) is None
+    assert len(cat.box_edges(lo, hi)) == 24
+
+
+def t_place_entity():
+    scene = bpy.context.scene
+    scene.cursor.location = (3, 0, 1)
+    bpy.context.view_layer.active_layer_collection = bpy.context.view_layer.layer_collection
+    assert bpy.ops.gbridge.place_entity(scene_item=ENEMY) == {'FINISHED'}
+    obj = bpy.context.view_layer.objects.active
+    try:
+        assert obj.name == "bat" and obj.gbridge.role == 'PLACEHOLDER' and obj.gbridge.scene == ENEMY, \
+            (obj.name, obj.gbridge.role, obj.gbridge.scene)
+        assert tuple(obj.location) == (3, 0, 1)
+        assert obj["speed"] == 1.5 and obj["health"] == 30 and obj["mode"] == 1 and obj["aggressive"] is True
+        assert obj["label"] == "bat" and list(obj["offset"]) == [0.0, 1.0, 0.0]
+        assert close(list(obj["tint"]), [1.0, 0.5, 0.25, 1.0])
+        assert "target" not in obj and "drop" not in obj, "no default for node_path/resource"
+        speed_ui = obj.id_properties_ui("speed").as_dict()
+        assert speed_ui["min"] == 0.0 and speed_ui["max"] == 10.0, speed_ui
+        mode_ui = obj.id_properties_ui("mode").as_dict()
+        assert "Patrol=1" in mode_ui["description"] and mode_ui["max"] == 5, mode_ui
+        assert obj.id_properties_ui("tint").as_dict()["subtype"] == 'COLOR_GAMMA'
+        lines = mod.catalog_ops.volume_lines(bpy.context, mod.catalog.load(PROJECT))
+        assert any(close(p, [2.65, -0.25, 1.0]) for pts in lines.values() for p in pts), "volume box at the object"
+        # Add missing props keeps edited values.
+        obj["speed"] = 4.0
+        del obj["health"]
+        assert bpy.ops.gbridge.sync_props() == {'FINISHED'}
+        assert obj["speed"] == 4.0 and obj["health"] == 30
+    finally:
+        bpy.data.objects.remove(obj)
+
+
+def t_place_area_and_pick_scene():
+    data = mod.catalog.load(PROJECT)
+    gate = mod.catalog_ops.place(bpy.context, mod.catalog.entry_for(data, GATE))
+    empty = bpy.data.objects.new("Thing", None)
+    bpy.context.scene.collection.objects.link(empty)
+    try:
+        assert gate.gbridge.role == 'AREA' and gate.empty_display_type == 'CUBE' and gate["target_room"] == ""
+        bpy.context.view_layer.objects.active = empty
+        assert bpy.ops.gbridge.pick_scene(scene_item=ENEMY) == {'FINISHED'}
+        assert empty.gbridge.scene == ENEMY and empty.gbridge.role == 'PLACEHOLDER' and empty["speed"] == 1.5
+    finally:
+        bpy.data.objects.remove(gate)
+        bpy.data.objects.remove(empty)
+
+
+def t_catalog_validation():
+    data = mod.catalog.load(PROJECT)
+    os.makedirs(os.path.join(PROJECT, "entities", "enemies", "bat"), exist_ok=True)
+    open(os.path.join(PROJECT, "entities", "enemies", "bat", "bat.tscn"), "w").close()
+    geo = bpy.data.collections["Geometria"]
+    bat = mod.catalog_ops.place(bpy.context, mod.catalog.entry_for(data, ENEMY), collection=geo)
+    bat["sped"] = 2.0          # typo: not an @export
+    bat["health"] = "lots"     # wrong type
+    try:
+        _entries, issues, _root = mod.export.run_validation(bpy.context)
+        mine = [i.message for i in issues if i.object == bat.name]
+        assert "property 'sped' is not an @export of bat" in mine, mine
+        assert "property 'health' should be int for bat" in mine, mine
+        assert all(i.level == 'WARNING' for i in issues if i.object == bat.name)
+    finally:
+        bpy.data.objects.remove(bat)
+
+
+def t_real_godot_catalog():
+    """The game's real catalog (written by Godot) loads and every scene places cleanly."""
+    game_root = os.path.dirname(os.path.dirname(GODOT_FIXTURES)) if GODOT_FIXTURES else ""
+    if not os.path.isfile(os.path.join(game_root, "bridge_catalog.json")):
+        return ("SKIP", "no bridge_catalog.json in the game project")
+    mod.catalog.clear_cache()
+    data = mod.catalog.load(game_root)
+    assert data["scenes"], "empty catalog"
+    placed = []
+    try:
+        for entry in data["scenes"]:
+            obj = mod.catalog_ops.place(bpy.context, entry)
+            placed.append(obj)
+            assert obj.gbridge.role == ('AREA' if entry["kind"] == "area" else 'PLACEHOLDER')
+            assert not mod.catalog.check_props(obj, entry, mod.entities.prop_items(obj)), entry["name"]
+    finally:
+        for obj in placed:
+            bpy.data.objects.remove(obj)
+        mod.catalog.clear_cache()
+
+
 def t_disable_enable():
     bpy.ops.preferences.addon_disable(module=module_name)
     assert not hasattr(bpy.types.Scene, "gbridge")
@@ -855,6 +986,11 @@ for name, fn in [
     ("validation_errors_block_export", t_validation_errors_block_export),
     ("sample_fixture_for_godot", t_sample_fixture_for_godot),
     ("two_hundred_pillars", t_two_hundred_pillars),
+    ("catalog_load", t_catalog_load),
+    ("place_entity", t_place_entity),
+    ("place_area_and_pick_scene", t_place_area_and_pick_scene),
+    ("catalog_validation", t_catalog_validation),
+    ("real_godot_catalog", t_real_godot_catalog),
     ("disable_enable", t_disable_enable),
 ]:
     check(name, fn)

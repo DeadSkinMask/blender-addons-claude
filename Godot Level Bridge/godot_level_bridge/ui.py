@@ -3,7 +3,7 @@
 import bpy
 from bpy.props import StringProperty
 
-from . import assets, entities, export, godot_project, paths, scope
+from . import assets, catalog, entities, export, godot_project, paths, scope
 
 ISSUE_ICONS = {'ERROR': 'ERROR', 'WARNING': 'ERROR', 'INFO': 'INFO'}
 
@@ -104,7 +104,19 @@ class GBRIDGE_PT_object(bpy.types.Panel):
         layout.prop(props, "skip")
 
         if role in ('PLACEHOLDER', 'AREA'):
-            layout.prop(props, "scene")
+            row = layout.row(align=True)
+            row.prop(props, "scene")
+            row.operator("gbridge.pick_scene", text="", icon='VIEWZOOM')
+            entry = catalog.entry_for(catalog.try_load(_project_root(context)), props.scene)
+            if entry:
+                box = layout.box()
+                box.label(text="Catalog: {} ({})".format(catalog.label(entry), entry["type"]), icon='ASSET_MANAGER')
+                for prop in entry.get("props", []):
+                    current = obj.get(prop["name"], None)
+                    box.label(text="{} ({}): {}".format(
+                        prop["name"], prop["type"], "default" if current is None else "set"),
+                        icon='CHECKBOX_HLT' if current is not None else 'CHECKBOX_DEHLT')
+                box.operator("gbridge.sync_props", icon='ADD')
         if role in ('COLLIDER', 'AREA'):
             layout.prop(props, "shape")
             if role == 'COLLIDER':
@@ -129,6 +141,32 @@ class GBRIDGE_PT_object(bpy.types.Panel):
         row = layout.row()
         row.enabled = False
         row.prop(props, "uid")
+
+
+class GBRIDGE_PT_catalog(bpy.types.Panel):
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "Godot Level"
+    bl_label = "Catalog"
+
+    def draw(self, context):
+        layout = self.layout
+        root = _project_root(context)
+        if root is None:
+            layout.label(text="Set the Godot project in the preferences", icon='ERROR')
+            return
+        try:
+            data = catalog.load(root)
+        except catalog.CatalogError as e:
+            layout.label(text=str(e), icon='ERROR')
+            data = None
+        if data is None:
+            layout.label(text="No catalog: in Godot, Project → Tools →", icon='INFO')
+            layout.label(text="Level Bridge: Export catalog")
+        else:
+            layout.label(text="{} scenes".format(len(data["scenes"])), icon='ASSET_MANAGER')
+            layout.operator("gbridge.place_entity", icon='ADD')
+        layout.operator("gbridge.reload_catalog", icon='FILE_REFRESH')
 
 
 class GBRIDGE_PT_collection(bpy.types.Panel):
@@ -170,7 +208,7 @@ class GBRIDGE_PT_validation(bpy.types.Panel):
             row.label(text="{}: {}".format(issue.object, issue.message), icon=ISSUE_ICONS[issue.level])
 
 
-CLASSES = (GBRIDGE_Preferences, GBRIDGE_PT_level, GBRIDGE_PT_object, GBRIDGE_PT_collection,
+CLASSES = (GBRIDGE_Preferences, GBRIDGE_PT_level, GBRIDGE_PT_catalog, GBRIDGE_PT_object, GBRIDGE_PT_collection,
            GBRIDGE_PT_validation)
 
 

@@ -2,7 +2,7 @@
 
 Contrato entre el addon de Blender (`godot_level_bridge/`, escritor) y el plugin de Godot (`addons/level_bridge/` del juego, lector). Cualquier cambio se hace en los dos lados a la vez, junto con sus tests, y se regeneran los fixtures (`UPDATE_FIXTURES=1 ./run_tests.sh`).
 
-Estado: **fases B0–B4** (geometría estática, placeholders, marcadores, colisores, áreas, paths, instancias de Geometry Nodes como MultiMesh, assets por colección instanciada). Lo marcado *(fase N)* está diseñado en `ANALISIS_Level_Bridge.md` §5 y se fija aquí al implementarse.
+Estado: **fases B0–B5** (geometría estática, placeholders, marcadores, colisores, áreas, paths, instancias de Geometry Nodes como MultiMesh, assets por colección instanciada, catálogo de escenas Godot → Blender). Lo marcado *(fase N)* está diseñado en `ANALISIS_Level_Bridge.md` §5 y se fija aquí al implementarse.
 
 ## 1. Archivos
 
@@ -157,3 +157,43 @@ En Godot las props se asignan **antes** de que el nodo entre al árbol: su `_rea
 - Nodos con el nombre del objeto original; transforms de mundo (sin jerarquía).
 - Objetos cuya geometría final es idéntica comparten una sola malla en el GLB y en Godot todos sus `MeshInstance3D` usan el mismo `Mesh`: duplicados enlazados (Alt+D), también con modificadores si dan el mismo resultado, y objetos independientes con la misma geometría (se compara un hash de vértices, caras, atributos, UV, colores y materiales de la malla evaluada). Las mallas se llaman `<nivel>_<malla>` en Godot. Para instancias de escena (assets con colisiones, luces, scripts) están las colecciones instanciadas *(fase 4)*; para repetir cientos de copias, Geometry Nodes → MultiMesh *(fase 3)*.
 - En Godot, Rebuild reimporta antes el GLB si cambió desde su última importación (si no, el editor podría construir con la versión anterior en caché). `Generated/` se guarda dentro de la escena de la sala: tras Rebuild hay que guardarla. El builder guarda el MD5 del manifiesto (`built_manifest_hash`) y avisa al cargar si el manifiesto cambió desde entonces.
+
+## 9. Catálogo de escenas (Godot → Blender, `gbridge-catalog` v1)
+
+Lo escribe el plugin de Godot (menú **Project → Tools → Level Bridge: Export catalog**, o `BridgeCatalog.save()`) en `res://bridge_catalog.json`; el addon de Blender lo lee desde la carpeta del proyecto (preferencia "Godot project"). Recorre `res://entities/` (todas las `.tscn`, recursivamente).
+
+```json
+{
+  "format": "gbridge-catalog",
+  "version": 1,
+  "root": "res://entities/",
+  "scenes": [
+    {
+      "scene": "res://entities/enemies/placeholder_enemy/placeholder_enemy.tscn",
+      "name": "placeholder_enemy",
+      "category": "enemies",
+      "type": "CharacterBody3D",
+      "kind": "placeholder",
+      "aabb": {"position": [-0.4, 0.0, -0.4], "size": [0.8, 1.6, 0.8]},
+      "props": [
+        {"name": "speed", "type": "float", "default": 1.5},
+        {"name": "mode", "type": "int", "default": 0, "enum": [["Idle", 0], ["Patrol", 1]]},
+        {"name": "target_room", "type": "string", "default": "", "hint": "file", "hint_string": "*.tscn"}
+      ]
+    }
+  ]
+}
+```
+
+| Campo | Significado |
+|---|---|
+| `name` | Nombre del archivo sin extensión. |
+| `category` | Primera subcarpeta bajo la raíz (`enemies`, `triggers`…). |
+| `type` | Clase de la raíz de la escena. |
+| `kind` | `area` si la raíz es un `Area3D` **sin** `CollisionShape3D` propia (la forma la pone el objeto de Blender: transiciones, zonas de cámara); si no, `placeholder`. |
+| `aabb` | Caja en espacio Godot, relativa al origen de la escena: unión de las mallas (`MeshInstance3D`) y formas de colisión de la escena tal como está guardada (lo que cambie su script al arrancar no cuenta). Vacía (`size` 0) si no tiene ninguna. |
+| `props` | Las propiedades `@export` del script de la raíz, en orden. |
+
+Tipos de `props` (los demás se omiten): `bool`, `int`, `float`, `string`, `string_name`, `node_path`, `vector2`, `vector3`, `vector4`, `color` (4 componentes), `resource` (con `class`; `default` = ruta `res://` o null). `default` = valor en la escena guardada (vectores y colores como arrays). Opcionales: `enum` (`[[nombre, valor], …]`, enteros con `@export_enum`), `hint` (`range`, `file`, `dir`, `multiline`…) y `hint_string` tal como los da Godot.
+
+En Blender: **Place entity** crea un empty con el rol (Placeholder o Area), la escena y sus props con los valores por defecto y su tipo; el visor dibuja la `aabb` de cada placeholder del catálogo (no se exporta nada de eso); **Validate** avisa de props que no son `@export` de la escena o de tipo distinto.

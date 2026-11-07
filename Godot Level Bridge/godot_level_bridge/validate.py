@@ -53,9 +53,21 @@ def _check_props(obj, uid_of, issues):
             issues.append(Issue(ERROR, obj.name, "property '{}': {}".format(key, e)))
 
 
+def _check_catalog_props(obj, data, issues):
+    """Props that are not @export of the object's catalog scene (or have another type)."""
+    from . import catalog
+    entry = catalog.entry_for(data, obj.gbridge.scene)
+    if entry is None:
+        return
+    for message in catalog.check_props(obj, entry, entities.prop_items(obj)):
+        issues.append(Issue(WARNING, obj.name, message))
+
+
 def check(entries, project_root, uid_of):
     """[Issue] for the collected (object, role) entries."""
+    from . import catalog
     issues = []
+    data = catalog.try_load(project_root)
     for obj, role in entries:
         kind = _scale_kind(obj)
         if role == 'STATIC':
@@ -70,6 +82,7 @@ def check(entries, project_root, uid_of):
                 issues.append(Issue(WARNING, obj.name, "several color attributes and none active"))
         elif role == 'PLACEHOLDER':
             _check_scene(obj, project_root, issues, required=True)
+            _check_catalog_props(obj, data, issues)
             if kind in ('NEGATIVE', 'NON_UNIFORM'):
                 issues.append(Issue(ERROR, obj.name, "non-uniform or negative scale on a placeholder"))
             elif kind == 'UNIFORM':
@@ -96,6 +109,7 @@ def check(entries, project_root, uid_of):
                 issues.append(Issue(ERROR, obj.name, "box without volume (a dimension is 0)"))
             if role == 'AREA':
                 _check_scene(obj, project_root, issues, required=False)
+                _check_catalog_props(obj, data, issues)
                 layer, mask = entities.layer_list(g.layer), entities.layer_list(g.mask)
                 if not layer and not mask and not entities.default_layers(project_root, 'AREA')[1]:
                     issues.append(Issue(ERROR, obj.name, "area without layer or mask"))

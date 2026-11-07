@@ -4,7 +4,7 @@ id = "rustremesher"
 version = "0.1.0"
 name = "RustRemesher"
 tagline = "Quad remesher driven by the local rustremesher engine"
-maintainer = "Luis Flores <luis.flores.zamorano@emeal.nttdata.com>"
+maintainer = "Luis Flores <luis.flores.zamorano@gmail.com>"
 type = "add-on"
 
 blender_version_min = "5.2.0"

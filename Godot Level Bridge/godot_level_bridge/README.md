@@ -2,7 +2,7 @@
 
 Exporta niveles de Blender a un proyecto Godot 4.7 como manifiesto + GLB, que el plugin `addons/level_bridge` del juego reconstruye como escena. Formato: `../FORMAT.md`. Diseño y fases: `../ANALISIS_Level_Bridge.md`.
 
-Estado: **fases B0–B4** — geometría estática (con colores de vértice), placeholders de escenas con props, marcadores, colisores primitivos, áreas, paths, instancias de Geometry Nodes como MultiMesh y assets (colecciones instanciadas) con sus colisiones y luces.
+Estado: **fases B0–B5** — geometría estática (con colores de vértice), placeholders de escenas con props, marcadores, colisores primitivos, áreas, paths, instancias de Geometry Nodes como MultiMesh assets (colecciones instanciadas) con sus colisiones y luces, y catálogo de escenas de Godot para colocar entidades con sus props.
 
 ## Instalación
 
@@ -50,6 +50,17 @@ Para elementos que se repiten y tienen algo más que malla (una antorcha con su 
 
 Los objetos con la misma malla (Alt+D) **no** se convierten en assets: siguen en la geometría estática compartiendo la malla.
 
+## Catálogo de escenas (colocar entidades sin escribir rutas ni props)
+
+1. **En Godot:** **Project → Tools → Level Bridge: Export catalog**. Escribe `res://bridge_catalog.json` con todas las escenas de `res://entities/`: su categoría (subcarpeta), su caja y sus `@export` con tipo y valor por defecto. Repetirlo cuando se agregue una entidad o se cambien sus `@export` (un test del juego avisa si quedó viejo).
+2. **En Blender:** **N → Godot Level → Catalog** → **Reload catalog** (la primera vez, o tras regenerarlo) → **Place entity**: buscador con todas las escenas (`enemies/placeholder_enemy`, `triggers/room_transition`…). Crea un empty en el cursor 3D, en la colección activa, con:
+   - **Role** Placeholder (o Area, para escenas cuya raíz es un `Area3D` sin forma propia, como transiciones y zonas de cámara: su tamaño es la escala del empty),
+   - **Scene** ya puesta,
+   - sus **Custom Properties** con los valores por defecto de Godot y su tipo (números con su rango, vectores, colores; los `@export_enum` como entero con las opciones en la descripción). Los `NodePath` y recursos sin valor no se crean: añádelos a mano (un `NodePath` = propiedad que apunta a otro objeto).
+3. El visor dibuja la **caja** de cada placeholder del catálogo con el color de su categoría (no se exporta). Es la caja de la escena tal como está guardada en Godot.
+4. Panel **Object** de un placeholder o área: lupa junto a **Scene** para elegirla del catálogo, la lista de sus `@export` (marcadas las que ya tiene) y **Add missing props** (añade las que falten sin tocar las que ya tienen valor).
+5. **Validate** avisa de props que no son `@export` de la escena (p. ej. un error de tipeo) o de tipo distinto.
+
 ## Validación
 
 Errores (bloquean el export): instancia sin colección; dos colecciones-asset con el mismo nombre; placeholder sin escena o con una que no existe; escala negativa o no uniforme en un placeholder; escala negativa en un colisor/área; caja sin volumen; forma convexa/trimesh sin malla; área sin capa ni máscara; path que no es curva; prop que apunta a un objeto no exportado.
@@ -72,6 +83,9 @@ B1–B2 (0.2.0–0.3.0):
 - [x] Tras Rebuild la pestaña de la escena queda marcada como modificada (asterisco).
 - [x] Duplicados con Alt+D: en Godot sus `MeshInstance3D` muestran el mismo recurso Mesh.
 - [x] B3 (0.4.0): un scatter de Geometry Nodes aparece en Godot como MultiMesh, sin la geometría guía del objeto; con "Realizar" sale como nodos estáticos.
+- [ ] B5 (0.6.0): en Godot, Project → Tools → Level Bridge: Export catalog escribe `bridge_catalog.json`.
+- [ ] B5: en Blender, panel Catalog → Place entity → `enemies/placeholder_enemy`: aparece en el cursor con su caja dibujada y sus props; exportar y Rebuild: el enemigo está donde se colocó con esas props.
+- [ ] B5: lupa de Scene en el panel Object y "Add missing props"; Validate avisa de una prop mal escrita.
 - [ ] B4 (0.5.0): en la sala de guardado (`catedral_05`) las dos antorchas son instancias de `levels/catedral/_kit/bridge_assets/Antorcha.tscn` y alumbran.
 - [ ] B4: crear un asset propio (colección + Collection Instance), exportar, Rebuild: aparece; cambiarlo en Blender (mover una pieza o la luz), exportar, Rebuild: cambian todas las copias.
 - [ ] B4: un muro con Geometry Nodes (Collection Info) y opción "Scenes": el muro llega como geometría y cada antorcha como instancia.

@@ -1,8 +1,8 @@
 """Godot Level Bridge: exports Blender levels to Godot (see ../FORMAT.md)."""
 
-from . import export, props, ui
+from . import catalog_ops, export, props, ui
 
-MODULES = (props, export, ui)
+MODULES = (props, export, catalog_ops, ui)
 
 
 def register():

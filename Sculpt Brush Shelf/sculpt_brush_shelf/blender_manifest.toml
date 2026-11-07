@@ -4,7 +4,7 @@ id = "sculpt_brush_shelf"
 version = "1.0.0"
 name = "Sculpt Brush Shelf"
 tagline = "Short, configurable palette of sculpt brushes"
-maintainer = "Luis Flores <luis.flores.zamorano@emeal.nttdata.com>"
+maintainer = "Luis Flores <luis.flores.zamorano@gmail.com>"
 type = "add-on"
 
 blender_version_min = "5.2.0"
