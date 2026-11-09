@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the installable ZIP (manifest at the archive root, as extensions require). The unwrapper is NOT included.
 set -euo pipefail
-VERSION="0.1.0"
+VERSION="0.2.0"
 cd "$(dirname "$0")/ministry_of_flat_bridge"
 rm -f ../ministry_of_flat_bridge-*.zip
 zip -r "../ministry_of_flat_bridge-$VERSION.zip" \

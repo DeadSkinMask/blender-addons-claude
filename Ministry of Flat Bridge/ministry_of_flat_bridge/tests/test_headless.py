@@ -43,6 +43,11 @@ def prefs():
 
 
 def clean_scene():
+    sc = bpy.context.scene.mof_bridge if hasattr(bpy.context.scene, "mof_bridge") else None
+    if sc is not None:  # every test starts from the default settings
+        for p in sc.bl_rna.properties:
+            if p.identifier not in ("rna_type", "name"):
+                sc.property_unset(p.identifier)
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj)
     for me in list(bpy.data.meshes):
@@ -319,6 +324,104 @@ def t_cancel_stops_the_tool():
     assert task.job.proc.poll() is not None and not os.path.isdir(d)
 
 
+def t_coverage_function():
+    from importlib import import_module
+    ex = import_module(module_name + ".obj_exchange")
+    quad = lambda x0, y0, x1, y1: np.array([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], float)
+    st, tt = np.array([0]), np.array([4])
+    f = lambda *uvs: ex.coverage([(u, st, tt) for u in uvs], 256)[0]
+    assert abs(f(quad(0, 0, 1, 1)) - 1.0) < 0.01
+    assert abs(f(quad(0, 0, .5, 1)) - 0.5) < 0.01
+    assert abs(f(quad(0, 0, .5, .5), quad(0, 0, .5, .5)) - 0.25) < 0.01, "overlapped copies count once"
+    assert abs(f(quad(0, 0, .5, .5), quad(.5, .5, 1, 1)) - 0.5) < 0.01
+    frac, tx, ty, ntx, nty = ex.coverage([(quad(1, 1, 2, 2), st, tt)], 256)
+    assert (tx, ty, ntx, nty) == (1, 1, 1, 1) and abs(frac - 1) < 0.01
+    frac, tx, ty, ntx, nty = ex.coverage([(quad(0, 0, 2, 1), st, tt)], 256)
+    assert ntx == 2 and abs(frac - 1) < 0.01
+
+
+def two_planes():
+    clean_scene()
+    me = bpy.data.meshes.new("planes")
+    me.from_pydata([(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (3, 0, 0), (7, 0, 0), (7, 4, 0), (3, 4, 0)], [], [(0, 1, 2, 3), (4, 5, 6, 7)])
+    ob = bpy.data.objects.new("planes", me)
+    bpy.context.scene.collection.objects.link(ob)
+    select_only(ob)
+    return ob
+
+
+def island_boxes(ob):
+    uv = uv_array(ob)
+    return uv[:4], uv[4:]
+
+
+def t_pack_gap_in_pixels_and_usage():
+    ob = two_planes()
+    sc = bpy.context.scene.mof_bridge
+    assert unwrap(pack_after=True, pack_gap_px=16, pack_rotation='NONE', resolution=1024, pack_tile=1001) == {'FINISHED'}
+    a, b = island_boxes(ob)
+    gx = max(b[:, 0].min() - a[:, 0].max(), a[:, 0].min() - b[:, 0].max()) * 1024
+    gy = max(b[:, 1].min() - a[:, 1].max(), a[:, 1].min() - b[:, 1].max()) * 1024
+    gap = max(gx, gy)
+    assert abs(gap - 16) < 1.5, (gx, gy)
+    uv = uv_array(ob)
+    assert abs(uv.min() * 1024 - 8) < 1.5, "distance to the border is half the gap"
+    assert "%" in sc.last_report and "gap 16 px @ 1024" in sc.last_report and "tile 1001" in sc.last_report, sc.last_report
+    pct = float(sc.last_report.split("%")[0])
+    # two squares: 1x1 and 4x4 world units packed in one tile -> a bit over half the tile at best
+    assert 30 < pct < 100, pct
+    areas = np.abs(poly_areas(ob, uv))
+    print("   area ratio of the 4x4 and 1x1 planes after packing: {:.2f}".format(areas[1] / areas[0]))
+    unwrap(pack_after=False, pack_gap_px=4)
+
+
+def t_pack_without_rotation_keeps_axes_aligned():
+    ob = two_planes()
+    assert unwrap(pack_after=True, pack_rotation='NONE') == {'FINISHED'}
+    uv = uv_array(ob)
+    for isl in (uv[:4], uv[4:]):
+        assert np.allclose(isl[0, 1], isl[1, 1], atol=1e-5) or np.allclose(isl[0, 0], isl[1, 0], atol=1e-5)
+    for r in ('CARDINAL', 'ANY'):
+        assert unwrap(pack_after=True, pack_rotation=r) == {'FINISHED'}
+    unwrap(pack_after=False, pack_rotation='NONE')
+
+
+def t_pack_target_tile_and_restores_state():
+    ob = two_planes()
+    other = add("cube", location=(10, 0, 0))
+    select_only(ob)
+    other.select_set(False)
+    assert unwrap(pack_after=True, pack_tile=1012) == {'FINISHED'}
+    uv = uv_array(ob)
+    assert uv.min() >= 1 and uv.max() <= 2, (uv.min(), uv.max())
+    assert "tile 1012" in bpy.context.scene.mof_bridge.last_report, bpy.context.scene.mof_bridge.last_report
+    assert bpy.context.mode == 'OBJECT'
+    assert bpy.context.view_layer.objects.active == ob and ob.select_get() and not other.select_get()
+    assert "MoF" not in other.data.uv_layers, "unselected objects are not touched"
+    unwrap(pack_after=False, pack_tile=1001)
+
+
+def t_pack_combined_objects_share_one_tile():
+    clean_scene()
+    a = add("cube", location=(0, 0, 0))
+    b = add("uv_sphere", location=(5, 0, 0), segments=16, ring_count=8)
+    select_only(a, b)
+    assert unwrap(combine=True, pack_after=True, pack_gap_px=8) == {'FINISHED'}
+    allu = np.concatenate([uv_array(a), uv_array(b)])
+    assert allu.min() >= 0 and allu.max() <= 1 + 1e-5
+    assert bpy.context.scene.mof_bridge.last_report.count("tile 1001") == 1
+    unwrap(combine=False, pack_after=False)
+
+
+def t_usage_is_reported_without_packing():
+    clean_scene()
+    c = add("cube")
+    select_only(c)
+    assert unwrap() == {'FINISHED'}
+    r = bpy.context.scene.mof_bridge.last_report
+    assert "% of tile 1001 used" in r and "gap" not in r, r
+
+
 def t_disable_enable():
     bpy.ops.preferences.addon_disable(module=module_name)
     assert not hasattr(bpy.types.Scene, "mof_bridge")
@@ -344,6 +447,12 @@ for name, fn in [
     ("denser_mesh_speed", t_denser_mesh_speed),
     ("engine_failure_is_reported", t_engine_failure_is_reported),
     ("cancel_stops_the_tool", t_cancel_stops_the_tool),
+    ("coverage_function", t_coverage_function),
+    ("pack_gap_in_pixels_and_usage", t_pack_gap_in_pixels_and_usage),
+    ("pack_without_rotation_keeps_axes_aligned", t_pack_without_rotation_keeps_axes_aligned),
+    ("pack_target_tile_and_restores_state", t_pack_target_tile_and_restores_state),
+    ("pack_combined_objects_share_one_tile", t_pack_combined_objects_share_one_tile),
+    ("usage_is_reported_without_packing", t_usage_is_reported_without_packing),
     ("disable_enable", t_disable_enable),
 ]:
     check(name, fn)

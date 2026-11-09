@@ -111,7 +111,7 @@ def start_group(context, objs):
 
 
 def finish_group(context, task):
-    """Reads the output and writes the UVs. Returns a list of (object name, faces). Cleans the job up."""
+    """Reads the output, writes the UVs, optionally packs. Returns (list of (object name, faces), usage text)."""
     scn = context.scene.mof_bridge
     try:
         uvs, faces = obj_exchange.read_faces(task.job.output_path)
@@ -141,7 +141,75 @@ def finish_group(context, task):
             _mark_seams(me, flat.reshape(-1, 2).astype(np.float64))
         me.update()
         done.append((obj.name, e["polys"]))
-    return done
+    if scn.pack_after:
+        _pack_group(context, [e["name"] for e in task.entries], scn)
+    return done, _usage_text(task.entries, scn)
+
+
+def _poly_arrays(me):
+    starts = np.empty(len(me.polygons), dtype=np.int32)
+    totals = np.empty(len(me.polygons), dtype=np.int32)
+    me.polygons.foreach_get("loop_start", starts)
+    me.polygons.foreach_get("loop_total", totals)
+    return starts, totals
+
+
+def _read_uv(me, name):
+    a = np.empty(len(me.loops) * 2, dtype=np.float32)
+    me.uv_layers[name].uv.foreach_get("vector", a)
+    return a.reshape(-1, 2).astype(np.float64)
+
+
+def _pack_group(context, names, scn):
+    """Packs the group's UVs with uv.pack_islands (all objects together, in edit mode) and moves them to the target tile.
+    Selection, active object and mode are restored."""
+    vl = context.view_layer
+    objs = [bpy.data.objects[n] for n in names]
+    prev_sel = [o.name for o in vl.objects if o.select_get()]
+    prev_active = vl.objects.active.name if vl.objects.active else None
+    for o in vl.objects:
+        o.select_set(False)
+    for o in objs:
+        o.select_set(True)
+    vl.objects.active = objs[0]
+    margin = scn.pack_gap_px / (2.0 * max(scn.resolution, 1))  # FRACTION = padding per island: gap between islands is twice that
+    try:
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.uv.select_all(action='SELECT')
+        result = bpy.ops.uv.pack_islands(
+            rotate=scn.pack_rotation != 'NONE', rotate_method='CARDINAL' if scn.pack_rotation == 'CARDINAL' else 'ANY',
+            margin_method='FRACTION', margin=margin, merge_overlap=scn.pack_keep_overlap, shape_method='CONCAVE',
+            udim_source='CLOSEST_UDIM', scale=True)
+        if result != {'FINISHED'}:
+            raise runner.EngineError("Blender's packer did not finish.")
+    finally:
+        if context.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+        for o in vl.objects:
+            o.select_set(o.name in prev_sel)
+        vl.objects.active = bpy.data.objects.get(prev_active) if prev_active else None
+    n = scn.pack_tile - 1001
+    shift = np.array([n % 10, n // 10], dtype=np.float32)
+    if shift.any():
+        for o in objs:
+            flat = (_read_uv(o.data, scn.uv_map_name).astype(np.float32) + shift).ravel()
+            o.data.uv_layers[scn.uv_map_name].uv.foreach_set("vector", flat)
+            o.data.update()
+
+
+def _usage_text(entries, scn):
+    items = []
+    for e in entries:
+        me = bpy.data.objects[e["name"]].data
+        starts, totals = _poly_arrays(me)
+        items.append((_read_uv(me, scn.uv_map_name), starts, totals))
+    frac, tx, ty, ntx, nty = obj_exchange.coverage(items, scn.resolution)
+    where = "tile {}".format(1001 + tx + 10 * ty) if ntx * nty == 1 else "{} tiles from {}".format(ntx * nty, 1001 + tx + 10 * ty)
+    text = "{:.1f}% of {} used".format(frac * 100, where)
+    if scn.pack_after:
+        text += ", gap {} px @ {}".format(scn.pack_gap_px, scn.resolution)
+    return text
 
 
 def _mark_seams(me, uv):
@@ -159,8 +227,10 @@ def _mark_seams(me, uv):
     me.edges.foreach_set("use_seam", np.isin(ekey, keys))
 
 
-def _report_done(op, done):
-    op.report({'INFO'}, "Unwrapped " + ", ".join("{} ({} faces)".format(n, f) for n, f in done))
+def _report_done(op, context, done, usages):
+    summary = " | ".join(usages)
+    context.scene.mof_bridge.last_report = summary
+    op.report({'INFO'}, "Unwrapped " + ", ".join("{} ({} faces)".format(n, f) for n, f in done) + ": " + summary)
 
 
 class MOF_OT_unwrap(bpy.types.Operator):
@@ -176,6 +246,7 @@ class MOF_OT_unwrap(bpy.types.Operator):
     _task = None
     _queue = None
     _done = None
+    _usages = None
 
     @classmethod
     def poll(cls, context):
@@ -183,7 +254,7 @@ class MOF_OT_unwrap(bpy.types.Operator):
 
     def execute(self, context):
         """Synchronous run (also what tests and scripts use)."""
-        done = []
+        done, usages = [], []
         try:
             for objs in plan_groups(context):
                 task = start_group(context, objs)
@@ -196,11 +267,13 @@ class MOF_OT_unwrap(bpy.types.Operator):
                 if state == 'error':
                     task.job.cleanup()
                     raise runner.EngineError(text)
-                done += finish_group(context, task)
+                d, u = finish_group(context, task)
+                done += d
+                usages.append(u)
         except runner.EngineError as e:
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
-        _report_done(self, done)
+        _report_done(self, context, done, usages)
         return {'FINISHED'}
 
     def invoke(self, context, event):
@@ -212,7 +285,7 @@ class MOF_OT_unwrap(bpy.types.Operator):
         except runner.EngineError as e:
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
-        self._done = []
+        self._done, self._usages = [], []
         _ACTIVE["running"] = True
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.3, window=context.window)
@@ -244,7 +317,9 @@ class MOF_OT_unwrap(bpy.types.Operator):
             if state == 'error':
                 self._task.job.cleanup()
                 raise runner.EngineError(text)
-            self._done += finish_group(context, self._task)
+            d, u = finish_group(context, self._task)
+            self._done += d
+            self._usages.append(u)
             if self._queue:
                 self._task = start_group(context, self._queue.pop(0))
                 return {'RUNNING_MODAL'}
@@ -253,7 +328,7 @@ class MOF_OT_unwrap(bpy.types.Operator):
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
         self._end(context)
-        _report_done(self, self._done)
+        _report_done(self, context, self._done, self._usages)
         return {'FINISHED'}
 
 

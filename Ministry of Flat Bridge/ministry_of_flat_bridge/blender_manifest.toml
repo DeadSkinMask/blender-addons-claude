@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "ministry_of_flat_bridge"
-version = "0.1.0"
+version = "0.2.0"
 name = "Ministry of Flat Bridge"
 tagline = "Automatic UV unwrap with the Ministry of Flat console tool"
 maintainer = "Luis Flores <luis.flores.zamorano@gmail.com>"

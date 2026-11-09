@@ -106,3 +106,47 @@ def fit_to_tiles(uv, udims=1):
     width, height = hi[0] + lo[0], hi[1] + lo[1]
     scale = min(udims / width, 1.0 / height)
     return uv * scale
+
+
+def coverage(items, resolution, max_grid=2048):
+    """Fraction of the UV tile(s) covered by the faces, by rasterizing them (overlapping islands count once).
+    `items`: list of (uv (n,2) per corner, loop_start, loop_total). The tiles measured are those the layout touches.
+    Returns (fraction, first_tile_u, first_tile_v, tiles_u, tiles_v)."""
+    all_uv = np.concatenate([u for u, _, _ in items]) if items else np.zeros((0, 2))
+    if len(all_uv) == 0:
+        return 0.0, 0, 0, 1, 1
+    lo, hi = all_uv.min(axis=0), all_uv.max(axis=0)
+    tx0, ty0 = int(np.floor(lo[0] + 1e-6)), int(np.floor(lo[1] + 1e-6))
+    ntx, nty = max(1, int(np.floor(hi[0] - 1e-6)) - tx0 + 1), max(1, int(np.floor(hi[1] - 1e-6)) - ty0 + 1)
+    n = int(min(resolution, max_grid))
+    canvas = np.zeros((nty * n, ntx * n), dtype=bool)
+    origin = np.array([tx0, ty0], dtype=np.float64)
+    for uv, starts, totals in items:
+        starts, totals = np.asarray(starts), np.asarray(totals)
+        ntri = totals - 2
+        a = np.repeat(starts, ntri)
+        grp_first = np.cumsum(ntri) - ntri
+        k = np.arange(ntri.sum()) - np.repeat(grp_first, ntri)
+        p0, p1, p2 = [(uv[idx] - origin) * n for idx in (a, a + k + 1, a + k + 2)]
+        tri = np.stack([p0, p1, p2], axis=1)
+        tmin = np.floor(tri.min(axis=1) - 0.0).astype(np.int64)
+        tmax = np.floor(tri.max(axis=1)).astype(np.int64)
+        for (x0, y0), (x1, y1), t in zip(tmin.tolist(), tmax.tolist(), tri):
+            x0, y0 = max(x0, 0), max(y0, 0)
+            x1, y1 = min(x1, canvas.shape[1] - 1), min(y1, canvas.shape[0] - 1)
+            if x1 < x0 or y1 < y0:
+                continue
+            xs, ys = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
+            (ax, ay), (bx, by), (cx, cy) = t
+            den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+            if abs(den) < 1e-12:
+                continue
+            w0 = ((by - cy) * (xs - cx) + (cx - bx) * (ys - cy)) / den
+            w1 = ((cy - ay) * (xs - cx) + (ax - cx) * (ys - cy)) / den
+            inside = (w0 >= 0) & (w1 >= 0) & (w0 + w1 <= 1)
+            if not inside.any():  # sub-pixel triangle: still mark the pixel it sits in
+                inside = np.zeros_like(inside)
+                inside[min(int(t[:, 1].mean()) - y0, inside.shape[0] - 1) if y1 > y0 else 0,
+                       min(int(t[:, 0].mean()) - x0, inside.shape[1] - 1) if x1 > x0 else 0] = True
+            canvas[y0:y1 + 1, x0:x1 + 1] |= inside
+    return float(canvas.mean()), tx0, ty0, ntx, nty

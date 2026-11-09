@@ -13,6 +13,24 @@ class MoFSettings(bpy.types.PropertyGroup):
                                description="The tool returns its layout at an arbitrary scale (a cube comes out about 4 units wide). "
                                            "Scale it uniformly (texel density kept) to fit the UV tile(s). Off: raw output. "
                                            "Ignored with World Scale")
+    pack_after: BoolProperty(name="Pack with Blender", default=False,
+                             description="After the unwrap, pack the islands with Blender's own packer instead of keeping the "
+                                         "tool's layout.")
+    pack_rotation: EnumProperty(name="Rotation", default='NONE',
+                                items=[('NONE', "None", "Never rotate islands (keeps horizontal and vertical lines pixel-aligned)"),
+                                       ('CARDINAL', "90 Degrees", "Rotate in 90 degree steps only (lines stay pixel-aligned)"),
+                                       ('ANY', "Any Angle", "Free rotation (tightest, but lines get jagged)")],
+                                description="How the packer may rotate islands")
+    pack_gap_px: IntProperty(name="Island Gap (px)", default=4, min=0, soft_max=64,
+                             description="Gap between islands in pixels at the Texture Resolution. The distance to the tile "
+                                         "border is half of it")
+    pack_tile: IntProperty(name="Target Tile", default=1001, min=1001, max=1100,
+                           description="UDIM tile that receives the packed layout (1001 = the 0-1 tile, 1002 = next to the right, "
+                                       "1011 = first tile of the second row)")
+    pack_keep_overlap: BoolProperty(name="Keep Overlapping Islands", default=True,
+                                    description="Islands that overlap (e.g. from Overlap Identical/Mirrored Parts) are packed as one "
+                                                "group and stay overlapped")
+    last_report: StringProperty(name="Last Result", default="")
     mark_seams: BoolProperty(name="Mark Seams", default=False,
                              description="Replace the object's seams with the edges where the new UV islands are cut")
     resolution: IntProperty(name="Texture Resolution", default=1024, min=16, soft_max=8192,
