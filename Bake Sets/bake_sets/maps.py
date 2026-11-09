@@ -22,6 +22,8 @@ MAP_INFO = {
                         desc="One flat colour per material"),
     'ELEMENT_ID':  dict(label="Element ID", suffix="elementid", engine='CYCLES', deps=(), srgb=False,
                         desc="One flat colour per source object"),
+    'BENT_NORMAL': dict(label="Bent Normal", suffix="bentnormal", engine='GL', deps=(), srgb=False,
+                        desc="Average direction of the open sky (cosine weighted), tangent space, for Godot"),
     'CURVATURE':   dict(label="Curvature", suffix="curvature", engine='GL', deps=('NORMAL',), srgb=False,
                         desc="Convex/concave from the normal map (0.5 = flat), computed on the GPU"),
     'CAVITY':      dict(label="Cavity", suffix="cavity", engine='GL', deps=('NORMAL',), srgb=False,

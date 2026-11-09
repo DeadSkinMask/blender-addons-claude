@@ -88,6 +88,26 @@ void main(){
   fragColor = vec4(vec3(v), 1.0);
 }"""
 
+_BENT_F = """
+void main(){
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec3 N = normalize(v_n);
+  vec3 T = normalize(v_t - N * dot(N, v_t));
+  vec3 B = cross(N, T) * v_s;
+  float e0 = texelFetch(e0map, p, 0).r;
+  vec3 ts = vec3(0.0, 0.0, 1.0);
+  if (e0 > 1e-5) {
+    vec3 wb = vec3(2.0 * texelFetch(exmap, p, 0).r / e0 - 1.0,
+                   2.0 * texelFetch(eymap, p, 0).r / e0 - 1.0,
+                   2.0 * texelFetch(ezmap, p, 0).r / e0 - 1.0);
+    // world -> object: inverse of the object matrix = transpose of the normal matrix
+    vec3 lb = normalize(wb * mat3(normal_matrix));
+    ts = normalize(vec3(dot(lb, T), dot(lb, B), dot(lb, N)));
+  }
+  ts.y *= flip_y;
+  fragColor = vec4(ts * 0.5 + 0.5, 1.0);
+}"""
+
 _DILATE_F = """
 void main(){
   ivec2 p = ivec2(gl_FragCoord.xy);
@@ -112,7 +132,8 @@ def _tex(img):
     n = w * h * 4
     arr = array.array('f', bytes(4 * n))
     img.pixels.foreach_get(arr)
-    return gpu.types.GPUTexture((w, h), format='RGBA8', data=gpu.types.Buffer('FLOAT', n, arr))
+    fmt = 'RGBA32F' if img.is_float else 'RGBA8'
+    return gpu.types.GPUTexture((w, h), format=fmt, data=gpu.types.Buffer('FLOAT', n, arr))
 
 
 def _quad_shader(frag, pushes, samplers):
@@ -217,6 +238,20 @@ def render(tb, key, images, name, flip_y):
                    "mode": ('f', 1.0 if cav else 0.0), "flip_y": ('f', flip_y)},
                   {"nmap": _tex(images['NORMAL'])})
             final = off
+        elif key == 'BENT_NORMAL':
+            sh = _shader(_MESH_V, _BENT_F, [('VEC2', 'pos'), ('VEC3', 'nrm'), ('VEC4', 'tan')],
+                         ifaces=[('VEC3', 'v_n'), ('VEC3', 'v_t')], flats=[('FLOAT', 'v_s')],
+                         pushes=[('MAT4', 'normal_matrix'), ('FLOAT', 'flip_y')],
+                         samplers=["e0map", "exmap", "eymap", "ezmap"])
+            pos, nn, tt = _frame_batch(tb)
+            batch = batch_for_shader(sh, 'TRIS', {"pos": pos, "nrm": nn, "tan": tt})
+            nm = tb.low.matrix_world.to_3x3().inverted_safe().transposed().to_4x4()
+            e = images['_bent']
+            _draw(off, sh, batch, {"normal_matrix": ('f', nm), "flip_y": ('f', flip_y)},
+                  {"e0map": _tex(e[0]), "exmap": _tex(e[1]), "eymap": _tex(e[2]), "ezmap": _tex(e[3])})
+            final, spare = _dilate(off, p.margin, res)
+            if spare is not None:
+                keep.append(spare)
         else:  # DUST, PAINT_BASE
             sh = _shader(_MESH_V, _MESH_F, [('VEC2', 'pos'), ('VEC3', 'nrm'), ('VEC4', 'tan')],
                          ifaces=[('VEC3', 'v_n'), ('VEC3', 'v_t')], flats=[('FLOAT', 'v_s')],

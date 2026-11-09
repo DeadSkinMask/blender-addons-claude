@@ -9,12 +9,12 @@ import bpy
 from .maps import MAP_INFO
 from .scene_copy import id_color
 
-_FILL = {'NORMAL': (0.5, 0.5, 1.0, 1.0), 'AO': (1.0, 1.0, 1.0, 1.0), 'THICKNESS': (1.0, 1.0, 1.0, 1.0)}
+_FILL = {'NORMAL': (0.5, 0.5, 1.0, 1.0), 'BENT_NORMAL': (0.5, 0.5, 1.0, 1.0), 'AO': (1.0, 1.0, 1.0, 1.0), 'THICKNESS': (1.0, 1.0, 1.0, 1.0)}
 _NATIVE = {'NORMAL': 'NORMAL', 'AO': 'AO'}
 
 
-def new_image(name, res, key):
-    img = bpy.data.images.new(name, res, res, alpha=False)
+def new_image(name, res, key, float_buffer=False):
+    img = bpy.data.images.new(name, res, res, alpha=False, float_buffer=float_buffer)
     img.generated_color = _FILL.get(key, (0.0, 0.0, 0.0, 1.0))
     img.colorspace_settings.name = 'sRGB' if MAP_INFO[key]['srgb'] else 'Non-Color'
     return img
@@ -88,6 +88,14 @@ def _wire(tb, mat, key, element_index, p):
         _drive(nt, em, pr.inputs['Base Color'] if pr else None, tuple(mat.diffuse_color))
     elif key == 'ROUGHNESS':
         _drive(nt, em, pr.inputs['Roughness'] if pr else None, mat.roughness)
+    elif key == 'WHITE':
+        # plain white diffuse: only the lighting is baked (bent normal probes)
+        for l in list(out.inputs['Surface'].links):
+            nt.links.remove(l)
+        df = nt.nodes.new('ShaderNodeBsdfDiffuse')
+        df.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
+        nt.links.new(df.outputs['BSDF'], out.inputs['Surface'])
+        return
     elif key == 'METALLIC':
         _drive(nt, em, pr.inputs['Metallic'] if pr else None, mat.metallic)
     elif key == 'MATERIAL_ID':
@@ -107,12 +115,7 @@ def _wire(tb, mat, key, element_index, p):
     nt.links.new(em.outputs['Emission'], out.inputs['Surface'])
 
 
-def bake_map(tb, key, name):
-    """Bake one Cycles map into a new image and return it."""
-    p, gs = tb.bset, tb.gs
-    res = int(p.resolution)
-    img = tb.track_image(new_image(name, res, key))
-
+def _attach_target(tb, img):
     for mat in tb.materials[tb.low]:
         node = tb.target_nodes.get(mat)
         if node is None:
@@ -122,14 +125,12 @@ def bake_map(tb, key, name):
         mat.node_tree.nodes.active = node
         node.select = True
 
-    native = _NATIVE.get(key)
-    if native is None:
-        for i, src in enumerate(tb.sources):
-            for mat in tb.materials[src]:
-                _wire(tb, mat, key, i, p)
 
-    sc = tb.scene
-    sc.cycles.samples = gs.ao_samples if key in ('AO', 'THICKNESS') else gs.samples
+def _run_bake(tb, img, btype, samples, **extra):
+    p, gs, sc, vl = tb.bset, tb.gs, tb.scene, tb.view_layer
+    res = int(p.resolution)
+    _attach_target(tb, img)
+    sc.cycles.samples = samples
     # Hard edges for the flat maps (IDs, albedo...): no pixel filter blending between neighbours.
     sc.cycles.use_adaptive_sampling = False
     sc.cycles.pixel_filter_type = 'BOX'
@@ -137,8 +138,6 @@ def bake_map(tb, key, name):
     if hasattr(sc.cycles, 'use_denoising'):
         sc.cycles.use_denoising = False
     tb.world.light_settings.distance = p.ao_distance
-
-    vl = tb.view_layer
     for o in list(vl.objects):
         o.select_set(False, view_layer=vl)
     if tb.projected:
@@ -146,19 +145,76 @@ def bake_map(tb, key, name):
             s.select_set(True, view_layer=vl)
     tb.low.select_set(True, view_layer=vl)
     vl.objects.active = tb.low
-
-    kw = dict(type=native or 'EMIT', width=res, height=res, margin=p.margin, margin_type='ADJACENT_FACES',
+    kw = dict(type=btype, width=res, height=res, margin=p.margin, margin_type='ADJACENT_FACES',
               use_selected_to_active=tb.projected, target='IMAGE_TEXTURES', use_clear=False,
               cage_extrusion=p.cage_extrusion, max_ray_distance=p.max_ray_distance)
+    kw.update(extra)
     if tb.cage is not None and tb.projected:
         kw.update(use_cage=True, cage_object=tb.cage.name)
-    if key == 'NORMAL':
-        kw.update(normal_space='TANGENT', normal_r='POS_X',
-                  normal_g='POS_Y' if gs.normal_y == 'OPENGL' else 'NEG_Y', normal_b='POS_Z')
     selected = ([tb.low] + list(tb.sources)) if tb.projected else [tb.low]
     with bpy.context.temp_override(scene=sc, view_layer=vl, active_object=tb.low, object=tb.low,
                                    selected_objects=selected, selected_editable_objects=selected):
         r = bpy.ops.object.bake(**kw)
     if r != {'FINISHED'}:
-        raise RuntimeError("Cycles bake of {} failed".format(MAP_INFO[key]['label']))
+        raise RuntimeError("Cycles bake ({}) failed".format(btype))
+
+
+def bake_map(tb, key, name):
+    """Bake one Cycles map into a new image and return it."""
+    p, gs = tb.bset, tb.gs
+    img = tb.track_image(new_image(name, int(p.resolution), key))
+    native = _NATIVE.get(key)
+    if native is None:
+        for i, src in enumerate(tb.sources):
+            for mat in tb.materials[src]:
+                _wire(tb, mat, key, i, p)
+    extra = {}
+    if key == 'NORMAL':
+        extra = dict(normal_space='TANGENT', normal_r='POS_X',
+                     normal_g='POS_Y' if gs.normal_y == 'OPENGL' else 'NEG_Y', normal_b='POS_Z')
+    _run_bake(tb, img, native or 'EMIT', gs.ao_samples if key in ('AO', 'THICKNESS') else gs.samples, **extra)
     return img
+
+
+def bake_bent_probes(tb, name):
+    """Four lighting probes for the bent normal, baked as DIFFUSE DIRECT under a temporary world.
+
+    E0 = cosine weighted visibility under a uniform white sky; E_a = the same under a sky whose
+    radiance is 0.5 + 0.5 * dot(direction, axis a). Then 2*E_a/E0 - 1 is the cosine weighted mean
+    direction of the open sky along that axis (the bent normal, as Godot wants it baked).
+    Returns the images [E0, EX, EY, EZ] (float buffers)."""
+    p, gs = tb.bset, tb.gs
+    res = int(p.resolution)
+    for src in tb.sources:
+        for mat in tb.materials[src]:
+            _wire(tb, mat, 'WHITE', 0, p)
+    w = tb.world
+    w.use_nodes = True
+    nt = w.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new('ShaderNodeOutputWorld')
+    bg = nt.nodes.new('ShaderNodeBackground')
+    nt.links.new(bg.outputs['Background'], out.inputs['Surface'])
+    tc = nt.nodes.new('ShaderNodeTexCoord')
+    dot = nt.nodes.new('ShaderNodeVectorMath')
+    dot.operation = 'DOT_PRODUCT'
+    nt.links.new(tc.outputs['Generated'], dot.inputs[0])
+    ma = nt.nodes.new('ShaderNodeMath')
+    ma.operation = 'MULTIPLY_ADD'
+    ma.inputs[1].default_value = 0.5
+    ma.inputs[2].default_value = 0.5
+    nt.links.new(dot.outputs['Value'], ma.inputs[0])
+    imgs = []
+    for label, axis in (("E0", None), ("EX", (1, 0, 0)), ("EY", (0, 1, 0)), ("EZ", (0, 0, 1))):
+        for l in list(bg.inputs['Color'].links):
+            nt.links.remove(l)
+        if axis is None:
+            bg.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
+        else:
+            dot.inputs[1].default_value = axis
+            nt.links.new(ma.outputs['Value'], bg.inputs['Color'])
+        img = tb.track_image(new_image("{}_{}".format(name, label), res, 'BENT_NORMAL', float_buffer=True))
+        img.generated_color = (0.0, 0.0, 0.0, 1.0)
+        _run_bake(tb, img, 'DIFFUSE', gs.ao_samples, pass_filter={'DIRECT'})
+        imgs.append(img)
+    return imgs

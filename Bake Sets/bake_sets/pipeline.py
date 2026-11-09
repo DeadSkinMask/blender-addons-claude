@@ -70,6 +70,8 @@ def bake_set(context, bset, gs):
         for key in order:
             if MAP_INFO[key]['engine'] == 'CYCLES':
                 images[key] = cycles_bake.bake_map(tb, key, "_bs_{}".format(key))
+        if 'BENT_NORMAL' in order:
+            images['_bent'] = cycles_bake.bake_bent_probes(tb, "_bs_bent")
         for key in order:
             if MAP_INFO[key]['engine'] == 'GL':
                 images[key] = gl_maps.render(tb, key, images, "_bs_{}".format(key), flip_y)

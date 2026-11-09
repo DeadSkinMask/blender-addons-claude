@@ -122,7 +122,7 @@ def at(pix, x, y, c=None):
 
 
 ALL = ('NORMAL', 'AO', 'THICKNESS', 'ALBEDO', 'EMISSION', 'ROUGHNESS', 'METALLIC', 'MATERIAL_ID', 'ELEMENT_ID',
-       'CURVATURE', 'CAVITY', 'DUST', 'PAINT_BASE', 'ORM')
+       'CURVATURE', 'CAVITY', 'DUST', 'PAINT_BASE', 'ORM', 'BENT_NORMAL')
 
 
 def t_errors():
@@ -155,7 +155,7 @@ def t_bake_all():
     r = bpy.ops.bakesets.bake()
     assert r == {'FINISHED'}, r
     for k in ('normal', 'ao', 'thickness', 'albedo', 'emission', 'roughness', 'metallic', 'matid', 'elementid',
-              'curvature', 'cavity', 'dust', 'paintbase', 'orm'):
+              'curvature', 'cavity', 'dust', 'paintbase', 'orm', 'bentnormal'):
         assert os.path.exists(os.path.join(OUT, "set_{}.png".format(k))), k
 
 
@@ -187,6 +187,72 @@ def t_emission():
     print("   green %.1f%% black %.0f%%" % (100 * green / n, 100 * black / n))
     assert green > 0.002 * n, "the cube emits green"
     assert black > 0.9 * n, "the non-emissive white metal must be black"
+
+
+def t_bent_normal():
+    p = px(load("bentnormal"))
+    n = RES * RES
+    # only look at pixels away from the cube (rows around the equator): open sky -> bent ~ normal
+    mid = [i for i in range(n) if abs(i // RES - RES // 2) < RES // 8]
+    bz = sum(p[4 * i + 2] for i in mid) / len(mid)
+    lens = []
+    for i in mid[::7]:
+        v = [p[4 * i + c] * 2 - 1 for c in range(3)]
+        lens.append(sum(x * x for x in v) ** 0.5)
+    dev = max(abs(p[4 * i] - 0.5) for i in range(n))
+    print("   bent: mean blue at the equator %.2f, vector length %.2f, max |R-0.5| %.2f" % (bz, sum(lens) / len(lens), dev))
+    assert bz > 0.95, "open sky: the bent normal must follow the surface normal"
+    assert 0.9 < sum(lens) / len(lens) < 1.1, "bent normals are normalized"
+    assert dev > 0.02, "the cube must bend the normals somewhere"
+
+
+def t_bent_normal_leans_away_from_a_wall():
+    # low plane facing +Z with its UV along +X; a tall wall right after its +X edge blocks that side
+    # of the sky, so the bent normal must lean towards -X (tangent R < 0.5), more so near the wall.
+    try:
+        bpy.ops.mesh.primitive_plane_add(size=2.0)
+        lowp = bpy.context.object
+        lowp.name = "plane_low"
+        bpy.ops.mesh.primitive_plane_add(size=2.0)
+        hp = bpy.context.object
+        hp.name = "plane_high"
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(1.1, 0, 0.5))
+        wall = bpy.context.object
+        wall.name = "wall_high"
+        wall.scale = (0.2, 2.0, 1.0)
+        gs = bpy.context.scene.bake_sets
+        gs.sets.clear()
+        gs.device = 'CPU'
+        gs.output_dir = os.path.join(OUT, "wall")
+        st = gs.sets.add()
+        st.name = "wall"
+        st.low = lowp
+        st.highs.add().obj = hp
+        st.highs.add().obj = wall
+        st.maps = {'BENT_NORMAL'}
+        st.resolution = str(RES)
+        st.margin = 4
+        assert bpy.ops.bakesets.bake() == {'FINISHED'}
+        img = bpy.data.images["wall_bentnormal"]
+        img.reload()
+        p = px(img)
+        def mean(c, x0, x1):
+            ys = range(RES // 3, 2 * RES // 3)
+            xs = range(int(x0 * RES), int(x1 * RES))
+            return sum(p[4 * (y * RES + x) + c] for y in ys for x in xs) / (len(ys) * len(xs))
+        near, far = mean(0, 0.85, 0.95), mean(0, 0.05, 0.15)
+        gmid = mean(1, 0.4, 0.6)
+        print("   wall: R near wall %.2f, far %.2f, G in the middle %.2f" % (near, far, gmid))
+        assert near < 0.45, "must lean away from the wall"
+        assert near < far - 0.03, "leans more near the wall"
+        assert 0.45 < gmid < 0.55, "no tilt along the wall"
+    finally:
+        for o in (lowp, hp, wall):
+            bpy.data.objects.remove(o)
+        for m in [m for m in bpy.data.meshes if m.users == 0]:
+            bpy.data.meshes.remove(m)
+        for i in [i for i in bpy.data.images if i.name.startswith("wall_")]:
+            bpy.data.images.remove(i)
 
 
 def t_ids():
@@ -301,6 +367,8 @@ for name, fn in [
     ("bake every map from two high poly objects", t_bake_all),
     ("albedo: white metal stays white, second high poly present", t_albedo_metal_not_black),
     ("emission: only the emissive high poly is lit", t_emission),
+    ("bent normal: follows the normal in the open, bends near the cube", t_bent_normal),
+    ("bent normal leans away from a wall (direction check)", t_bent_normal_leans_away_from_a_wall),
     ("material ID / element ID: one colour per material / object", t_ids),
     ("tangent normal reflects the high poly", t_normal),
     ("ORM packs AO/roughness/metallic on the GPU", t_orm_packs_channels),

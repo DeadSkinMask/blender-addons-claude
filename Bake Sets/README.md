@@ -22,6 +22,7 @@ Se escribe `<set>_<mapa>.png` y la imagen queda cargada en el .blend (volver a h
 | Albedo, Roughness, Metallic | Cycles **EMIT** de 1 sample leyendo directo el Base Color / Roughness / Metallic del Principled (sigue las texturas conectadas). No usa el bake DIFFUSE de Blender, que excluye la componente glossy y deja negros los metales blancos |
 | Emission | Cycles EMIT de 1 sample: Emission Color × Emission Strength del Principled (o lo conectado); sin emisión sale negro |
 | Material ID, Element ID | Cycles EMIT de 1 sample con un color plano por material / por objeto fuente |
+| Bent Normal | Cycles (4 pasadas `DIFFUSE` solo luz directa con un mundo temporal: cielo blanco uniforme y 3 degradados en X, Y, Z; `AO Samples` controla el ruido) + GPU que reconstruye `2·E_eje/E0 − 1`, lo normaliza y lo pasa a espacio tangente del low poly. Es la dirección media del cielo abierto ponderada por coseno, como pide Godot. Cuesta como 4 AO. Usa la misma opción Normal Y que el normal map |
 | Curvature, Cavity | **GPU** (módulo `gpu`), derivados del normal map tangente. 0.5 = plano; es el detalle del high poly respecto al low poly |
 | Dust | **GPU**: `dot(normal en mundo, +Z)` con umbral y suavidad. La normal se reconstruye del normal map con el marco tangente del low poly |
 | Paint Base | **GPU**: mezcla de Dust y AO (`Dust in Paint Base`: 0 = solo AO, 1 = solo dust) |
@@ -30,6 +31,8 @@ Se escribe `<set>_<mapa>.png` y la imagen queda cargada en el .blend (volver a h
 Los mapas GPU piden por sí solos los que necesitan (por ejemplo Dust hornea el Normal); las dependencias no se guardan si no las marcaste.
 
 Qué usa Cycles y por qué: todo lo que sale de la geometría o del material de los **high poly** necesita proyectar rayos (Blender no tiene otro bake que Cycles). Se hace con 1 sample salvo AO y Thickness. Lo que se puede derivar de lo ya horneado va por GPU.
+
+Bent normal en Godot: asígnalo en `StandardMaterial3D` → Bent Normal (la malla necesita normales y tangentes). Está orientado alrededor de la normal de la malla, no de la del normal map.
 
 ## Garantías
 
