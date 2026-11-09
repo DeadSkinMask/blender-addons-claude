@@ -34,6 +34,10 @@ Qué usa Cycles y por qué: todo lo que sale de la geometría o del material de 
 
 Bent normal en Godot: asígnalo en `StandardMaterial3D` → Bent Normal (la malla necesita normales y tangentes). Está orientado alrededor de la normal de la malla, no de la del normal map.
 
+## Progreso
+
+Al pulsar Bake desde el panel, el bake va por pasos (un mapa por vez): la barra de estado muestra el mapa en curso, el porcentaje y una estimación del tiempo restante, y **Esc** cancela entre pasos limpiando todo lo temporal. La interfaz no responde a otras acciones mientras corre, y cada paso individual bloquea Blender mientras Cycles trabaja, así que con AO/Bent Normal a alta resolución la barra avanza a saltos. Llamado desde Python (`bpy.ops.bakesets.bake()`) es síncrono.
+
 ## Garantías
 
 - No modifica tus datos: trabaja sobre copias en una escena temporal (copias de objetos y de materiales, el nodo de imagen y la emisión se añaden a las copias) y lo borra todo al terminar.
@@ -60,4 +64,5 @@ blender --command extension validate bake_sets
 - [ ] "Add selected as high poly" ignora el low poly y los no-mesh.
 - [ ] Las opciones por mapa se muestran solo cuando el mapa está marcado.
 - [ ] Hornear con GPU como dispositivo en tu máquina (los tests usan CPU).
+- [ ] Durante el bake la barra de estado muestra mapa, % y tiempo restante; Esc cancela.
 - [ ] Los sets se guardan y recuperan con el .blend.

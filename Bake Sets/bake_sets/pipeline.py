@@ -56,8 +56,40 @@ def _save(img, key, prefix, folder):
     return path
 
 
-def bake_set(context, bset, gs):
-    """Bake the maps of one set. Returns the list of written file paths."""
+def step_cost(key, bset, gs):
+    """Relative cost of one step, used for the progress fraction and the time estimate."""
+    area = (int(bset.resolution) / 1024.0) ** 2
+    if key in ('AO', 'THICKNESS'):
+        c = gs.ao_samples
+    elif key == 'BENT_PROBES':
+        c = 4 * gs.ao_samples
+    elif key == 'SAVE':
+        c = 1.0
+    elif MAP_INFO.get(key, {}).get('engine') == 'GL':
+        c = 1.0
+    else:
+        c = gs.samples + 1.0
+    return c * area
+
+
+def total_cost(bset, gs):
+    order, wanted = resolve(set(bset.maps))
+    c = 1.0  # scene preparation
+    for key in order:
+        if MAP_INFO[key]['engine'] == 'CYCLES':
+            c += step_cost(key, bset, gs)
+    if 'BENT_NORMAL' in order:
+        c += step_cost('BENT_PROBES', bset, gs)
+    for key in order:
+        if MAP_INFO[key]['engine'] == 'GL':
+            c += step_cost(key, bset, gs)
+    return c + step_cost('SAVE', bset, gs) * len(wanted)
+
+
+def bake_set_steps(context, bset, gs):
+    """Generator: yields (label, cost_done) *before* each step runs, so a modal operator can show
+    what is about to happen and redraw. Closing it early cleans up the temporary scene.
+    Returns the list of written paths."""
     errs = validate(bset, gs)
     if errs:
         raise ValueError("; ".join(errs))
@@ -66,15 +98,36 @@ def bake_set(context, bset, gs):
     gl_maps.init()
     flip_y = 1.0 if gs.normal_y == 'OPENGL' else -1.0
     images, paths = {}, []
+    done = 0.0
+    yield "Preparing {}".format(bset.name), done
     with TempBake(context, bset, gs) as tb:
+        done += 1.0
         for key in order:
             if MAP_INFO[key]['engine'] == 'CYCLES':
+                yield "{}: {}".format(bset.name, MAP_INFO[key]['label']), done
                 images[key] = cycles_bake.bake_map(tb, key, "_bs_{}".format(key))
+                done += step_cost(key, bset, gs)
         if 'BENT_NORMAL' in order:
+            yield "{}: Bent Normal (light probes)".format(bset.name), done
             images['_bent'] = cycles_bake.bake_bent_probes(tb, "_bs_bent")
+            done += step_cost('BENT_PROBES', bset, gs)
         for key in order:
             if MAP_INFO[key]['engine'] == 'GL':
+                yield "{}: {} (GPU)".format(bset.name, MAP_INFO[key]['label']), done
                 images[key] = gl_maps.render(tb, key, images, "_bs_{}".format(key), flip_y)
+                done += step_cost(key, bset, gs)
         for key in wanted:
+            yield "{}: saving {}".format(bset.name, MAP_INFO[key]['label']), done
             paths.append(_save(images[key], key, bset.name, folder))
+            done += step_cost('SAVE', bset, gs)
     return paths
+
+
+def bake_set(context, bset, gs):
+    """Synchronous version (scripts, tests). Returns the list of written file paths."""
+    gen = bake_set_steps(context, bset, gs)
+    try:
+        while True:
+            next(gen)
+    except StopIteration as e:
+        return e.value

@@ -352,6 +352,37 @@ def t_second_bake_replaces_image():
     assert len([i for i in bpy.data.images if i.name.startswith("again_ao")]) == 1
 
 
+def t_progress_steps_and_clean_cancel():
+    pipeline = sys.modules[modname + ".pipeline"]
+    gs = bpy.context.scene.bake_sets
+    st = configure(name="steps", maps=('ORM', 'NORMAL'), folder=os.path.join(OUT, "steps"))
+    total = pipeline.total_cost(st, gs)
+    gen = pipeline.bake_set_steps(bpy.context, st, gs)
+    seen = []
+    try:
+        while True:
+            seen.append(next(gen))
+    except StopIteration as e:
+        paths = e.value
+    labels = [l for l, _ in seen]
+    costs = [c for _, c in seen]
+    print("   steps:", labels)
+    assert costs == sorted(costs) and costs[0] == 0.0
+    assert abs(costs[-1] + pipeline.step_cost('SAVE', st, gs) - total) < 1e-6, (costs[-1], total)
+    assert labels[0].startswith("Preparing") and any("saving ORM" in l for l in labels)
+    assert len(paths) == 2
+    # closing the generator half way (what Esc does) must remove every temporary datablock
+    before = snapshot()
+    nimg = len(bpy.data.images)
+    gen = pipeline.bake_set_steps(bpy.context, st, gs)
+    next(gen)
+    next(gen)   # scene exists now
+    assert any(sc.name.startswith("_bakesets") for sc in bpy.data.scenes)
+    gen.close()
+    assert snapshot() == before
+    assert len(bpy.data.images) == nimg, "temporary images left after cancelling"
+
+
 def t_unregister():
     r = bpy.ops.preferences.addon_disable(module=modname)
     assert r == {'FINISHED'}, r
@@ -380,6 +411,7 @@ for name, fn in [
     ("no temporary data left, user data untouched", t_no_leaks_and_user_data_untouched),
     ("bake without high poly (self bake)", t_self_bake_without_highs),
     ("rebaking replaces the image datablock", t_second_bake_replaces_image),
+    ("progress steps are monotone; cancelling mid-way leaves nothing", t_progress_steps_and_clean_cancel),
     ("unregister leaves nothing", t_unregister),
 ]:
     check(name, fn)
