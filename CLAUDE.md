@@ -33,6 +33,23 @@ Non-obvious API facts this addon depends on (verified on 5.2.3):
 
 `INSTRUCCIONES_ADDON_SCULPT_BRUSH_SHELF.md` is the original spec (written by GPT); its brush names and "tool region" panel placement were wrong, the implementation above supersedes it.
 
+## Bake Sets
+
+Extension-format addon (UI in English, README in Spanish) that bakes PBR maps from a user-defined list of high-poly objects onto one low poly (`N` → "Bake"). Replaces the bake half of TexTools (which paired objects by name suffix and could not bake several HP onto one LP). Sets live in `scene.bake_sets`.
+
+```bash
+cd "Bake Sets"
+./run_tests.sh /opt/blender-5.2.3-linux-x64/blender   # builds ZIP, runs headless tests, writes test_log.txt
+blender --command extension validate bake_sets
+```
+
+- Same test mechanics as the other extensions (ZIP installed into a temp config, module `bl_ext.user_default.bake_sets`, second argument is the output dir). New files go in the `zip` list of `build_zip.sh`; bump the version there and in the manifest. Not committed yet at the time of writing.
+- Module map: `maps.py` (catalogue, dependencies, which maps need Cycles or GL), `scene_copy.py` (`TempBake`: temporary scene with copies of objects and materials; user data is never modified), `cycles_bake.py` (native NORMAL/AO and EMIT bakes through temporary emission nodes), `gl_maps.py` (curvature, cavity, dust, paint base, ORM on the GPU), `pipeline.py` (validate, order, save), `operators.py`, `ui.py`, `props.py`.
+- Facts verified on 5.2.3: headless GPU needs `gpu.init()` first (without it every GPU call raises); `gpu.texture.from_image` segfaulted right after a Cycles bake, so textures are built from `image.pixels` (`GPUTexture` + `Buffer('FLOAT')`); `bpy.ops.object.bake` takes the selection from the *window* context, so the temp override must also set `selected_objects` / `selected_editable_objects` (and `select_set(..., view_layer=...)`); `images.load(..., check_existing=True)` returns the temporary image if it was saved to the same path.
+- Why EMIT: the DIFFUSE bake excludes glossy, so a white metal comes out black; an Emission wired to the Principled socket (or its linked source) gives the real value. `pixel_filter_type='BOX'` and margin `ADJACENT_FACES`; a few pixels at ID edges still blend (Blender's margin), tests count only colours covering ≥0.1%.
+- Derived maps: curvature/cavity are finite differences of the baked tangent normal map; dust decodes the world normal with the low poly's tangent frame (`calc_tangents`, `corner_normals`, `bitangent_sign`) and the inverse-transpose of `matrix_world`; GL passes that draw the mesh dilate the margin on the GPU (ping-pong passes).
+- Not tested (needs GUI): panel drawing and the `gpu` result on a real GPU backend other than the headless one; Cycles runs on CPU in tests.
+
 ## Ministry of Flat Bridge
 
 Extension-format addon (UI in English, README in Spanish) that unwraps UVs by running the closed-source `UnWrapConsole3.exe` (Ministry of Flat 3.7.x; user zip at `~/GIT/personal/MinistryOfFlat_Release.zip`, **never bundle or commit the exe**). Exchange is OBJ in/out like RustRemesher; on Linux it runs through Wine (`wine64`), natively on Windows. No source exists to recompile (see the project README for the porting assessment).

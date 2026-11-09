@@ -1,0 +1,17 @@
+schema_version = "1.0.0"
+
+id = "bake_sets"
+version = "0.1.0"
+name = "Bake Sets"
+tagline = "Bake PBR maps from many high-poly objects onto one low-poly"
+maintainer = "Luis Flores <luis.flores.zamorano@gmail.com>"
+type = "add-on"
+
+blender_version_min = "5.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+[permissions]
+files = "Write the baked textures to the output folder"
