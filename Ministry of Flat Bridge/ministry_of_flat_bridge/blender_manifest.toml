@@ -1,0 +1,17 @@
+schema_version = "1.0.0"
+
+id = "ministry_of_flat_bridge"
+version = "0.1.0"
+name = "Ministry of Flat Bridge"
+tagline = "Automatic UV unwrap with the Ministry of Flat console tool"
+maintainer = "Luis Flores <luis.flores.zamorano@gmail.com>"
+type = "add-on"
+
+blender_version_min = "5.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+[permissions]
+files = "Temporary folder to exchange OBJ files with the unwrapper"

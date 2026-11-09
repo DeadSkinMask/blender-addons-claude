@@ -33,6 +33,18 @@ Non-obvious API facts this addon depends on (verified on 5.2.3):
 
 `INSTRUCCIONES_ADDON_SCULPT_BRUSH_SHELF.md` is the original spec (written by GPT); its brush names and "tool region" panel placement were wrong, the implementation above supersedes it.
 
+## Ministry of Flat Bridge
+
+Extension-format addon (UI in English, README in Spanish) that unwraps UVs by running the closed-source `UnWrapConsole3.exe` (Ministry of Flat 3.7.x; user zip at `~/GIT/personal/MinistryOfFlat_Release.zip`, **never bundle or commit the exe**). Exchange is OBJ in/out like RustRemesher; on Linux it runs through Wine (`wine64`), natively on Windows. No source exists to recompile (see the project README for the porting assessment).
+
+```bash
+cd "Ministry of Flat Bridge"
+./run_tests.sh /opt/blender-5.2.3-linux-x64/blender [path/to/UnWrapConsole3.exe]   # default: unzips the release zip into a temp dir
+```
+
+- Tool facts (measured): output OBJ keeps vertex indices, face order and corner order and only adds `vt` + `v/vt` per corner; the layout is at an arbitrary scale (cube ≈ 4×3 units), so the addon fits it to 0-1 (`fit_to_tiles`, not with World Scale). Exit code is unreliable (0 on failure, 1 on some successes): success = output file exists; the error text comes from its console log. `-udims` has no effect at all (identical output for 1/2/4/8, even on 31k faces). It crashes on degenerate/non-planar n-gons, and Wine then leaves an error dialog open, hence the `timeout` preference (job killed via process group). Run it with the job folder as cwd and relative file names (no Wine path translation). `WINEDLLOVERRIDES=mscoree,mshtml=` avoids Mono/Gecko prompts. Use `wine64 ./exe` with `./` (a bare name is searched in system32). In tests use `timeout` and `wineserver -k` after experiments with bad meshes.
+- 5.2 API: write UVs with `layer.uv.foreach_set('vector', flat)`; per-corner normals are `mesh.corner_normals.foreach_get('vector', …)`.
+
 ## Godot MultiMesh Scatter
 
 Two files that form one pipeline and must stay in sync on the binary format. User-facing docs (setup, inspector properties, coordinate convention, troubleshooting) live in `README_Godot_MultiMesh_Scatter.md`; keep it updated when behavior changes.
