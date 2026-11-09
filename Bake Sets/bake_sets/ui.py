@@ -66,6 +66,15 @@ class BAKESETS_PT_maps(bpy.types.Panel):
         col = self.layout.column(align=True)
         col.prop(s, "maps", expand=True)
         wants = s.maps
+        if wants & {'NORMAL', 'BENT_NORMAL'}:
+            box = self.layout.box()
+            uv = s.low.data.uv_layers.active if s.low and s.low.type == 'MESH' else None
+            box.label(text="Baking to UV: {}".format(uv.name if uv else "(none)"), icon='UV')
+            col = box.column(align=True)
+            col.scale_y = 0.8
+            col.label(text="Tangent space maps need that same UV:")
+            col.label(text="set it in the Normal Map node's")
+            col.label(text="UV Map field (or make it the render UV).")
         self.layout.separator()
         c = self.layout.column()
         c.prop(s, "resolution")

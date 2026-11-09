@@ -34,6 +34,10 @@ Qué usa Cycles y por qué: todo lo que sale de la geometría o del material de 
 
 Bent normal en Godot: asígnalo en `StandardMaterial3D` → Bent Normal (la malla necesita normales y tangentes). Está orientado alrededor de la normal de la malla, no de la del normal map.
 
+## UV y normal maps en espacio tangente
+
+El bake usa la **UV activa** (la resaltada) del low poly; el panel muestra su nombre cuando eliges Tangent Normal o Bent Normal. Un normal map tangente solo se ve bien si se decodifica con las tangentes de **esa misma UV**: en el nodo **Normal Map** escribe su nombre en el campo "UV Map" (o marca esa UV como UV de render, el icono de cámara). El nodo UV Map que alimenta la imagen NO basta: solo decide de dónde se leen los píxeles. Si el campo queda vacío con otra UV de render, aparecen parches rectangulares con el sombreado cambiado en las islas giradas. Albedo, ORM y los demás mapas no tienen este problema porque solo leen por coordenada UV.
+
 ## Progreso
 
 Al pulsar Bake desde el panel, el bake va por pasos (un mapa por vez): la barra de estado muestra el mapa en curso, el porcentaje y una estimación del tiempo restante, y **Esc** cancela entre pasos limpiando todo lo temporal. La interfaz no responde a otras acciones mientras corre, y cada paso individual bloquea Blender mientras Cycles trabaja, así que con AO/Bent Normal a alta resolución la barra avanza a saltos. Llamado desde Python (`bpy.ops.bakesets.bake()`) es síncrono.
