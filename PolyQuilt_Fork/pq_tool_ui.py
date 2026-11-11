@@ -76,6 +76,12 @@ def draw_settings_ui( opetator , context, layout, tool  , ui ):
         col.prop( preferences, "brush_size" , text = "Brush Size" , expand = True, slider = True , icon_only = False )
         col.prop( preferences, "brush_strength" , text = "Brush Strength" , expand = True, slider = True , icon_only = False )
 
+        row = layout.row( align = True )
+        op = row.operator( "mesh.pq_pin_selected" , text = "Pin Selected" , icon = 'PINNED' )
+        op.action = 'PIN'
+        op = row.operator( "mesh.pq_pin_selected" , text = "Unpin" , icon = 'UNPINNED' )
+        op.action = 'UNPIN'
+
     if "RETOPO" in ui or "BRUSH" in ui :
         row = layout.row(align=True)
         row.prop( preferences, "line_segment_length" , text = "Line Length" , expand = True, slider = True  )

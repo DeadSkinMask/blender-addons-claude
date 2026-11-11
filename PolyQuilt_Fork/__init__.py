@@ -16,6 +16,7 @@ from bpy.utils.toolsystem import ToolDef
 from .pq_operator import *
 from .pq_operator_add_empty_object import *
 from .pq_icon import *
+from .subtools.subtool_brush_pin import MESH_OT_pq_pin_selected
 from .pq_tool import PolyQuiltTools
 from .pq_tool_ui import VIEW3D_PT_tools_polyquilt_options
 from .pq_keymap_editor import PQ_OT_DirtyKeymap
@@ -32,6 +33,7 @@ classes = (
     VIEW3D_PT_tools_polyquilt_options ,
     VIEW3D_PT_tools_polyquilt_gpencil ,
     PQ_OT_DirtyKeymap ,
+    MESH_OT_pq_pin_selected ,
     pq_operator_add_empty_object.MESH_OT_PolyQuilt_Gpenci_Tools ,
     pq_operator_add_empty_object.MESH_OT_GPencil_2_Edge ,
     pq_operator_add_empty_object.OBJECT_OT_add_object

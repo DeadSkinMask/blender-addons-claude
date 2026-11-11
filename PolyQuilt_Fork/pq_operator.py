@@ -61,7 +61,9 @@ def enum_move_type_callback(scene, context):
 def enum_brush_type_callback(scene, context):
         items=(('SMOOTH' , "Smooth", "" , custom_icon("icon_brush_relax") , 0),
                ('MOVE' , "Move", "" , custom_icon("icon_brush_move") , 1 ) ,
-               ('DELETE' , "Delete", "" , custom_icon("icon_brush_delete") , 2 ) )
+               ('DELETE' , "Delete", "" , custom_icon("icon_brush_delete") , 2 ) ,
+               ('PIN' , "Pin", "Paint the vertex_pinned group (Smooth ignores pinned vertices)" , 'PINNED' , 3 ) ,
+               ('UNPIN' , "Unpin", "Erase weight from the vertex_pinned group" , 'UNPINNED' , 4 ) )
         return items
 
 def enum_override_brush_type_callback(scene, context):

@@ -25,6 +25,7 @@ from ..QMesh import *
 from ..utils.mouse_event_util import ButtonEventUtil, MBEventType
 from .subtool import *
 from .subtool_brush_relax import *
+from .subtool_brush_pin import *
 from .subtool_brush_size import *
 from .subtool_brush_move import *
 from .subtool_brush_delete import *
@@ -42,6 +43,8 @@ class MainToolBrush(MainTool) :
             'SMOOTH' : SubToolBrushRelax ,
             'MOVE' : SubToolBrushMove ,
             'DELETE' : SubToolBrushDelete ,
+            'PIN' : SubToolBrushPin ,
+            'UNPIN' : SubToolBrushUnpin ,
         }
 
         brush = op.brush_type
@@ -86,6 +89,10 @@ class MainToolBrush(MainTool) :
             Draw.append( SubToolBrushMove.DrawHighlight( gizmo , element ) )
         elif mode == 'DELETE' :
             Draw.append( SubToolBrushDelete.DrawHighlight( gizmo , element ) )
+        elif mode == 'PIN' :
+            Draw.append( SubToolBrushPin.DrawHighlight( gizmo , element ) )
+        elif mode == 'UNPIN' :
+            Draw.append( SubToolBrushUnpin.DrawHighlight( gizmo , element ) )
         else :
             Draw.append( SubToolBrushRelax.DrawHighlight( gizmo , element ) )
 
