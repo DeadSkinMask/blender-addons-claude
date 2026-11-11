@@ -50,8 +50,10 @@ class BAKESETS_PG_set(bpy.types.PropertyGroup):
     dust_threshold: FloatProperty(name="Dust Threshold", default=0.5, min=-1.0, max=1.0,
                                   description="Dot of the world normal with +Z where dust starts")
     dust_softness: FloatProperty(name="Dust Softness", default=0.3, min=0.0, max=1.0)
-    paint_dust_weight: FloatProperty(name="Dust in Paint Base", default=0.5, min=0.0, max=1.0,
-                                     description="0 = only ambient occlusion, 1 = only dust")
+    paint_ground: FloatProperty(name="Paint Ground Level", default=0.2, min=0.0, max=1.0,
+                                description="Brightness of surfaces facing down (up-facing ones are white)")
+    paint_ao_strength: FloatProperty(name="Paint AO Strength", default=1.0, min=0.0, max=1.0,
+                                     description="How much the ambient occlusion darkens the cavities")
 
 
 class BAKESETS_PG_settings(bpy.types.PropertyGroup):

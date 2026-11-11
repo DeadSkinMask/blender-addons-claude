@@ -82,9 +82,12 @@ void main(){
   ts.y *= flip_y;
   vec3 ln = normalize(T * ts.x + B * ts.y + N * ts.z);
   vec3 wn = normalize(mat3(normal_matrix) * ln);
-  float dust = smoothstep(threshold - softness, threshold + softness, wn.z);
-  float v = dust;
-  if (mode > 0.5) v = mix(texelFetch(ao, p, 0).r, dust, weight);
+  float v = smoothstep(threshold - softness, threshold + softness, wn.z);   // dust mask
+  if (mode > 0.5) {
+    // paint base: smooth ambient light from above (hemisphere) times the ambient occlusion
+    float hemi = mix(ground, 1.0, 0.5 + 0.5 * wn.z);
+    v = hemi * mix(1.0, texelFetch(ao, p, 0).r, ao_strength);
+  }
   fragColor = vec4(vec3(v), 1.0);
 }"""
 
@@ -288,7 +291,7 @@ def render(tb, key, images, name, flip_y, existing=None):
             sh = _shader(_MESH_V, _MESH_F, [('VEC2', 'pos'), ('VEC3', 'nrm'), ('VEC4', 'tan')],
                          ifaces=[('VEC3', 'v_n'), ('VEC3', 'v_t')], flats=[('FLOAT', 'v_s')],
                          pushes=[('MAT4', 'normal_matrix'), ('FLOAT', 'threshold'), ('FLOAT', 'softness'),
-                                 ('FLOAT', 'weight'), ('FLOAT', 'mode'), ('FLOAT', 'flip_y')],
+                                 ('FLOAT', 'ground'), ('FLOAT', 'ao_strength'), ('FLOAT', 'mode'), ('FLOAT', 'flip_y')],
                          samplers=["nmap", "ao"])
             pos, nn, tt = _frame_batch(tb)
             batch = batch_for_shader(sh, 'TRIS', {"pos": pos, "nrm": nn, "tan": tt})
@@ -296,7 +299,8 @@ def render(tb, key, images, name, flip_y, existing=None):
             paint = key == 'PAINT_BASE'
             _draw(off, sh, batch,
                   {"normal_matrix": ('f', nm), "threshold": ('f', p.dust_threshold),
-                   "softness": ('f', max(p.dust_softness, 1e-4)), "weight": ('f', p.paint_dust_weight),
+                   "softness": ('f', max(p.dust_softness, 1e-4)), "ground": ('f', p.paint_ground),
+                   "ao_strength": ('f', p.paint_ao_strength),
                    "mode": ('f', 1.0 if paint else 0.0), "flip_y": ('f', flip_y)},
                   {"nmap": _tex(images['NORMAL']), "ao": _tex(images['AO'] if paint else images['NORMAL'])})
             final, spare = _dilate(off, p.margin, res)

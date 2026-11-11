@@ -96,11 +96,12 @@ class BAKESETS_PT_maps(bpy.types.Panel):
         if 'CAVITY' in wants:
             c.prop(s, "cavity_radius")
             c.prop(s, "cavity_strength")
-        if wants & {'DUST', 'PAINT_BASE'}:
+        if 'DUST' in wants:
             c.prop(s, "dust_threshold")
             c.prop(s, "dust_softness")
         if 'PAINT_BASE' in wants:
-            c.prop(s, "paint_dust_weight")
+            c.prop(s, "paint_ground")
+            c.prop(s, "paint_ao_strength")
 
 
 class BAKESETS_PT_output(bpy.types.Panel):

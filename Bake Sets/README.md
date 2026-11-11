@@ -25,7 +25,7 @@ Se escribe `<set>_<mapa>.png` y la imagen queda cargada en el .blend (volver a h
 | Bent Normal | Cycles (4 pasadas `DIFFUSE` solo luz directa con un mundo temporal: cielo blanco uniforme y 3 degradados en X, Y, Z; `AO Samples` controla el ruido) + GPU que reconstruye `2·E_eje/E0 − 1`, lo normaliza y lo pasa a espacio tangente del low poly. Es la dirección media del cielo abierto ponderada por coseno, como pide Godot. Cuesta como 4 AO. Usa la misma opción Normal Y que el normal map |
 | Curvature, Cavity | **GPU** (módulo `gpu`), derivados del normal map tangente. 0.5 = plano; es el detalle del high poly respecto al low poly |
 | Dust | **GPU**: `dot(normal en mundo, +Z)` con umbral y suavidad. La normal se reconstruye del normal map con el marco tangente del low poly |
-| Paint Base | **GPU**: mezcla de Dust y AO (`Dust in Paint Base`: 0 = solo AO, 1 = solo dust) |
+| Paint Base | **GPU**: base neutra estilo Blizzard/Dota: degradado vertical suave (luz ambiental desde arriba: `mezcla(suelo, 1, 0.5 + 0.5·normal.z)`) multiplicado por la oclusión ambiental. Arriba queda blanco, abajo oscuro (`Paint Ground Level`) y las cavidades se oscurecen con `Paint AO Strength` |
 | ORM | **GPU**: AO en R, Roughness en G, Metallic en B |
 
 Los mapas GPU piden por sí solos los que necesitan (por ejemplo Dust hornea el Normal); las dependencias no se guardan si no las marcaste.

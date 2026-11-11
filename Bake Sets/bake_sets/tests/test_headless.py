@@ -305,10 +305,14 @@ def t_curvature_cavity():
 
 def t_paintbase_between():
     p = px(load("paintbase"))
-    top = sum(at(p, x, int(RES * 0.9), 0) for x in range(RES)) / RES
-    bottom = sum(at(p, x, int(RES * 0.1), 0) for x in range(RES)) / RES
-    print("   paint base top %.2f bottom %.2f" % (top, bottom))
-    assert top > bottom
+    row = lambda f: sum(at(p, x, int(RES * f), 0) for x in range(RES)) / RES
+    # (the cube sits on the pole and darkens the rings next to it with AO, so measure further away)
+    top, mid, bottom = row(0.78), row(0.5), row(0.1)
+    print("   paint base top %.2f middle %.2f bottom %.2f" % (top, mid, bottom))
+    assert top > mid + 0.15, "up-facing surfaces are brighter"
+    assert 0.4 < mid < 0.8, "the gradient is smooth (equator is in between)"
+    assert bottom < 0.4, "down-facing surfaces are dark (ground level 0.2 times AO)"
+    assert top > mid > bottom
 
 
 def t_thickness():

@@ -31,7 +31,7 @@ MAP_INFO = {
     'DUST':        dict(label="Dust", suffix="dust", engine='GL', deps=('NORMAL',), srgb=False,
                         desc="Mask of surfaces facing up (dot of the world normal with Z), on the GPU"),
     'PAINT_BASE':  dict(label="Paint Base", suffix="paintbase", engine='GL', deps=('NORMAL', 'AO'), srgb=False,
-                        desc="Hand-painted style base: mix of the Dust mask and Ambient Occlusion"),
+                        desc="Blizzard/Dota style base: soft vertical gradient (light from above) times ambient occlusion"),
     'ORM':         dict(label="ORM", suffix="orm", engine='GL', deps=('AO', 'ROUGHNESS', 'METALLIC'), srgb=False,
                         desc="AO in R, Roughness in G, Metallic in B"),
 }
