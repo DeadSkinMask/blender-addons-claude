@@ -183,10 +183,12 @@ class MESH_OT_poly_quilt_base(bpy.types.Operator):
 
         if context.region == None :
             self.report({'WARNING'}, "Oops!context.region is None!Cancel operation:(" )
+            Exit()
             return {'CANCELLED'}            
 
         if self.bmo.CheckValid(context) == False :
             self.report({'WARNING'}, "Oops!Data black was broken! Cancel operation:(" )
+            Exit()
             return {'CANCELLED'}            
 
         try :
@@ -197,7 +199,7 @@ class MESH_OT_poly_quilt_base(bpy.types.Operator):
             raise e
             return {'CANCELLED'}
 
-        if 'CANCELLED' in val or 'FINISHED' in val :
+        if 'CANCELLED' in val or 'FINISHED' in val or 'RUNNING_MODAL' not in val and 'PASS_THROUGH' not in val :
             Exit()
         return val
 
@@ -315,7 +317,13 @@ class MESH_OT_poly_quilt_base(bpy.types.Operator):
             PQ_GizmoGroup_Base.running_polyquilt = True
             QSnap.update(context)
             
-            return { self.currentSubTool.Update(context, event) }
+            result = { self.currentSubTool.Update(context, event) }
+            if 'FINISHED' in result or 'CANCELLED' in result :
+                # the modal handler will never run, so nobody else would reset the flag
+                MESH_OT_poly_quilt.handle_remove()
+                self.RemoveTimerEvent(context)
+                PQ_GizmoGroup_Base.running_polyquilt = False
+            return result
         else:
             self.report({'WARNING'}, "View3D not found, cannot run operator" + event.type + "|" + event.value )
             return {'CANCELLED'}
@@ -323,6 +331,7 @@ class MESH_OT_poly_quilt_base(bpy.types.Operator):
     def cancel( self , context):
         MESH_OT_poly_quilt.handle_remove()
         self.RemoveTimerEvent(context)
+        PQ_GizmoGroup_Base.running_polyquilt = False
 #       gc.collect()
 
     @staticmethod

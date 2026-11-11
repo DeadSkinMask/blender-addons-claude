@@ -174,8 +174,9 @@ class PQ_GizmoGroup_Base(bpy.types.GizmoGroup):
         self.gizmo = None
 
     def __del__(self) :
-        if hasattr( self , "gizmo" ) :       
-            PQ_GizmoGroup_Base.child_gizmos.remove( self.gizmo )
+        gizmo = getattr( self , "gizmo" , None )
+        if gizmo in PQ_GizmoGroup_Base.child_gizmos :
+            PQ_GizmoGroup_Base.child_gizmos.remove( gizmo )
         if not PQ_GizmoGroup_Base.child_gizmos :
             QSnap.remove_ref()
 
