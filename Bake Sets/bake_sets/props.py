@@ -25,6 +25,15 @@ class BAKESETS_PG_set(bpy.types.PropertyGroup):
     maps: EnumProperty(name="Maps", items=MAP_ITEMS, options={'ENUM_FLAG'}, default={'NORMAL'})
     resolution: EnumProperty(name="Resolution", default='2048',
                              items=[(s, s, "") for s in ('256', '512', '1024', '2048', '4096', '8192')])
+    clear_before_bake: BoolProperty(
+        name="Clear Before Bake", default=True,
+        description="On: every bake starts from an empty texture. Off: keep the existing texture file "
+                    "(same name and size) and only replace the baked islands, to bake different "
+                    "elements separately into one texture")
+    albedo_alpha: BoolProperty(
+        name="Transparent Background", default=False,
+        description="Albedo gets an alpha channel: opaque on the islands and their margin, "
+                    "transparent elsewhere")
     margin: IntProperty(name="Margin", default=16, min=0, max=128, subtype='PIXEL',
                         description="Padding around UV islands, in pixels")
     cage_extrusion: FloatProperty(name="Extrusion", default=0.1, min=0.0, subtype='DISTANCE',

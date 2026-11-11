@@ -34,6 +34,12 @@ Qué usa Cycles y por qué: todo lo que sale de la geometría o del material de 
 
 Bent normal en Godot: asígnalo en `StandardMaterial3D` → Bent Normal (la malla necesita normales y tangentes). Está orientado alrededor de la normal de la malla, no de la del normal map.
 
+## Fondo transparente y limpiar / sobrescribir
+
+- **Transparent Background** (aparece con Albedo): el albedo se guarda con canal alpha, opaco en las islas y su margen y transparente en el resto.
+- **Clear Before Bake** (activado por defecto): cada bake parte de una textura vacía. Desactivado, si ya existe `<set>_<mapa>.png` con la misma resolución, se hornea **encima**: solo se reemplazan las islas del low poly (más su margen) y el resto se conserva. Sirve para hornear elementos distintos por separado en una misma textura: crea un set por elemento con el **mismo nombre** (misma textura de salida) y UV en zonas distintas, y desactiva Clear en los siguientes. Aplica a todos los mapas, también a los calculados en GPU. Si el archivo no existe o tiene otra resolución, parte de cero.
+- Si activas alpha pero sigues sin limpiar sobre un archivo sin alpha, el fondo anterior se queda opaco.
+
 ## UV y normal maps en espacio tangente
 
 El bake usa la **UV activa** (la resaltada) del low poly; el panel muestra su nombre cuando eliges Tangent Normal o Bent Normal. Un normal map tangente solo se ve bien si se decodifica con las tangentes de **esa misma UV**: en el nodo **Normal Map** escribe su nombre en el campo "UV Map" (o marca esa UV como UV de render, el icono de cámara). El nodo UV Map que alimenta la imagen NO basta: solo decide de dónde se leen los píxeles. Si el campo queda vacío con otra UV de render, aparecen parches rectangulares con el sombreado cambiado en las islas giradas. Albedo, ORM y los demás mapas no tienen este problema porque solo leen por coordenada UV.

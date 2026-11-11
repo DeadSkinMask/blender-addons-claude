@@ -120,20 +120,32 @@ void main(){
         if (q.a > 0.5) c = q;
       }
   }
-  fragColor = vec4(c.rgb, 1.0);
+  fragColor = vec4(c.rgb, (opaque > 0.5) ? 1.0 : c.a);
 }"""
 
+_COMP_F = """
+void main(){
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 n = texelFetch(newt, p, 0);
+  fragColor = (texelFetch(mask, p, 0).a > 0.5) ? vec4(n.rgb, 1.0) : texelFetch(oldt, p, 0);
+}"""
+
+_FLAT_F = "void main(){ fragColor = vec4(1.0); }"
+_FLAT_V = "void main(){ gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0); }"
+
 _QUAD = {"pos": [(-1, -1), (1, -1), (1, 1), (-1, -1), (1, 1), (-1, 1)]}
+
+
+def _tex_arr(arr, w, h, fmt='RGBA8'):
+    return gpu.types.GPUTexture((w, h), format=fmt, data=gpu.types.Buffer('FLOAT', w * h * 4, arr))
 
 
 def _tex(img):
     """GPU texture from the image's pixels (gpu.texture.from_image crashed right after a Cycles bake)."""
     w, h = img.size
-    n = w * h * 4
-    arr = array.array('f', bytes(4 * n))
+    arr = array.array('f', bytes(4 * w * h * 4))
     img.pixels.foreach_get(arr)
-    fmt = 'RGBA32F' if img.is_float else 'RGBA8'
-    return gpu.types.GPUTexture((w, h), format=fmt, data=gpu.types.Buffer('FLOAT', n, arr))
+    return _tex_arr(arr, w, h, 'RGBA32F' if img.is_float else 'RGBA8')
 
 
 def _quad_shader(frag, pushes, samplers):
@@ -156,18 +168,37 @@ def _draw(off, shader, batch, uniforms, samplers):
         batch.draw(shader)
 
 
-def _dilate(off, margin, res):
-    """Spread the covered texels outward `margin` pixels (ping-pong between two targets)."""
+def _dilate(off, margin, res, opaque=True):
+    """Spread the covered texels outward `margin` pixels (ping-pong between two targets).
+    opaque=False keeps the coverage in alpha (used as a mask)."""
     if margin <= 0:
         return off, None
-    sh = _quad_shader(_DILATE_F, (), ["src"])
+    sh = _quad_shader(_DILATE_F, (('FLOAT', 'opaque'),), ["src"])
     batch = batch_for_shader(sh, 'TRIS', _QUAD)
     other = gpu.types.GPUOffScreen(res, res, format='RGBA8')
     a, b = off, other
     for _ in range(margin):
-        _draw(b, sh, batch, {}, {"src": a.texture_color})
+        _draw(b, sh, batch, {"opaque": ('f', 1.0 if opaque else 0.0)}, {"src": a.texture_color})
         a, b = b, a
     return a, other
+
+
+def _composite(tb, new_off, old_arr, res):
+    """Keep `old_arr` (an existing texture) everywhere except on the low poly's islands + margin,
+    where the freshly computed map goes. Returns the composited offscreen (caller frees it)."""
+    flat = _shader(_FLAT_V, _FLAT_F, [('VEC2', 'pos')])
+    pos, _, _ = _frame_batch(tb)
+    cov = gpu.types.GPUOffScreen(res, res, format='RGBA8')
+    _draw(cov, flat, batch_for_shader(flat, 'TRIS', {"pos": pos}), {}, {})
+    mask, spare = _dilate(cov, tb.bset.margin, res, opaque=False)
+    sh = _quad_shader(_COMP_F, (), ["newt", "oldt", "mask"])
+    out = gpu.types.GPUOffScreen(res, res, format='RGBA8')
+    _draw(out, sh, batch_for_shader(sh, 'TRIS', _QUAD), {},
+          {"newt": new_off.texture_color, "oldt": _tex_arr(old_arr, res, res), "mask": mask.texture_color})
+    cov.free()
+    if spare is not None:
+        spare.free()
+    return out
 
 
 def _to_image(off, img, res):
@@ -212,8 +243,9 @@ def _frame_batch(tb, uv_name=None):
     return pos, nn, tt
 
 
-def render(tb, key, images, name, flip_y):
-    """Compute one GL map from `images` (already baked maps) and return it as a new image."""
+def render(tb, key, images, name, flip_y, existing=None):
+    """Compute one GL map from `images` (already baked maps) and return it as a new image.
+    existing: pixels of the current texture file to keep outside the baked islands."""
     from .cycles_bake import new_image
     p = tb.bset
     res = int(p.resolution)
@@ -270,6 +302,10 @@ def render(tb, key, images, name, flip_y):
             final, spare = _dilate(off, p.margin, res)
             if spare is not None:
                 keep.append(spare)
+        if existing is not None:
+            comp = _composite(tb, final, existing, res)
+            keep.append(comp)
+            final = comp
         _to_image(final, img, res)
     finally:
         off.free()

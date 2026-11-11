@@ -36,6 +36,10 @@ def validate(bset, gs):
     return errs
 
 
+def _path(bset, gs, key):
+    return os.path.join(output_dir(gs), "{}_{}.png".format(bset.name, MAP_INFO[key]['suffix']))
+
+
 def _srgb(key):
     return 'sRGB' if MAP_INFO[key]['srgb'] else 'Non-Color'
 
@@ -98,6 +102,14 @@ def bake_set_steps(context, bset, gs):
     gl_maps.init()
     flip_y = 1.0 if gs.normal_y == 'OPENGL' else -1.0
     images, paths = {}, []
+    res = int(bset.resolution)
+
+    def existing(key):
+        """Pixels to keep when not clearing (None = start from empty)."""
+        if bset.clear_before_bake or key not in wanted:
+            return None
+        return cycles_bake.read_existing(_path(bset, gs, key), res)
+
     done = 0.0
     yield "Preparing {}".format(bset.name), done
     with TempBake(context, bset, gs) as tb:
@@ -105,7 +117,7 @@ def bake_set_steps(context, bset, gs):
         for key in order:
             if MAP_INFO[key]['engine'] == 'CYCLES':
                 yield "{}: {}".format(bset.name, MAP_INFO[key]['label']), done
-                images[key] = cycles_bake.bake_map(tb, key, "_bs_{}".format(key))
+                images[key] = cycles_bake.bake_map(tb, key, "_bs_{}".format(key), init=existing(key))
                 done += step_cost(key, bset, gs)
         if 'BENT_NORMAL' in order:
             yield "{}: Bent Normal (light probes)".format(bset.name), done
@@ -114,7 +126,8 @@ def bake_set_steps(context, bset, gs):
         for key in order:
             if MAP_INFO[key]['engine'] == 'GL':
                 yield "{}: {} (GPU)".format(bset.name, MAP_INFO[key]['label']), done
-                images[key] = gl_maps.render(tb, key, images, "_bs_{}".format(key), flip_y)
+                images[key] = gl_maps.render(tb, key, images, "_bs_{}".format(key), flip_y,
+                                             existing=existing(key))
                 done += step_cost(key, bset, gs)
         for key in wanted:
             yield "{}: saving {}".format(bset.name, MAP_INFO[key]['label']), done

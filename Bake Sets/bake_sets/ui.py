@@ -79,6 +79,9 @@ class BAKESETS_PT_maps(bpy.types.Panel):
         c = self.layout.column()
         c.prop(s, "resolution")
         c.prop(s, "margin")
+        c.prop(s, "clear_before_bake")
+        if 'ALBEDO' in wants:
+            c.prop(s, "albedo_alpha")
         if wants & {'NORMAL', 'AO', 'THICKNESS', 'ALBEDO', 'ROUGHNESS', 'METALLIC',
                     'MATERIAL_ID', 'ELEMENT_ID', 'ORM', 'PAINT_BASE'} or True:
             c.prop(s, "cage_extrusion")

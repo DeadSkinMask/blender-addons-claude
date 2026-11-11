@@ -4,6 +4,9 @@
 Everything that reads material values (albedo, roughness, metallic, IDs, thickness) is baked
 as EMIT from a temporary emission wired to the wanted socket: the DIFFUSE bake excludes the
 glossy component, which turns white metals black."""
+import array
+import os
+
 import bpy
 
 from .maps import MAP_INFO
@@ -13,10 +16,32 @@ _FILL = {'NORMAL': (0.5, 0.5, 1.0, 1.0), 'BENT_NORMAL': (0.5, 0.5, 1.0, 1.0), 'A
 _NATIVE = {'NORMAL': 'NORMAL', 'AO': 'AO'}
 
 
-def new_image(name, res, key, float_buffer=False):
-    img = bpy.data.images.new(name, res, res, alpha=False, float_buffer=float_buffer)
-    img.generated_color = _FILL.get(key, (0.0, 0.0, 0.0, 1.0))
+def read_existing(path, res):
+    """Pixels (RGBA floats) of an existing texture file with the right size, else None."""
+    if not path or not os.path.exists(path):
+        return None
+    img = bpy.data.images.load(path, check_existing=False)
+    try:
+        if tuple(img.size) != (res, res):
+            return None
+        arr = array.array('f', bytes(4 * res * res * 4))
+        img.pixels.foreach_get(arr)
+        return arr
+    finally:
+        bpy.data.images.remove(img)
+
+
+def new_image(name, res, key, float_buffer=False, alpha=False, init=None):
+    """Bake target. alpha=True: cleared to alpha 0, Cycles sets alpha 1 on every texel it bakes
+    (islands + margin). init: pixels of an existing texture to bake on top of."""
+    img = bpy.data.images.new(name, res, res, alpha=alpha, float_buffer=float_buffer)
+    fill = _FILL.get(key, (0.0, 0.0, 0.0, 1.0))
+    img.generated_color = (fill[0], fill[1], fill[2], 0.0 if alpha else 1.0)
     img.colorspace_settings.name = 'sRGB' if MAP_INFO[key]['srgb'] else 'Non-Color'
+    if alpha:
+        img.alpha_mode = 'STRAIGHT'
+    if init is not None:
+        img.pixels.foreach_set(init)
     return img
 
 
@@ -159,10 +184,11 @@ def _run_bake(tb, img, btype, samples, **extra):
         raise RuntimeError("Cycles bake ({}) failed".format(btype))
 
 
-def bake_map(tb, key, name):
+def bake_map(tb, key, name, init=None):
     """Bake one Cycles map into a new image and return it."""
     p, gs = tb.bset, tb.gs
-    img = tb.track_image(new_image(name, int(p.resolution), key))
+    alpha = key == 'ALBEDO' and p.albedo_alpha
+    img = tb.track_image(new_image(name, int(p.resolution), key, alpha=alpha, init=init))
     native = _NATIVE.get(key)
     if native is None:
         for i, src in enumerate(tb.sources):

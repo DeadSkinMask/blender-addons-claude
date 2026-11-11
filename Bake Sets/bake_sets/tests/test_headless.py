@@ -383,6 +383,132 @@ def t_progress_steps_and_clean_cancel():
     assert len(bpy.data.images) == nimg, "temporary images left after cancelling"
 
 
+def _img(name):
+    img = bpy.data.images[name]
+    img.reload()
+    return img, px(img)
+
+
+def t_albedo_alpha():
+    # a sphere's default UV fills the whole square: shrink it so there is empty space around the islands
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8, location=(30, 0, 0))
+    low = bpy.context.active_object
+    low.name = "alow"
+    bpy.ops.object.shade_smooth()
+    uv = low.data.uv_layers.active.uv
+    arr = [0.0] * (2 * len(uv))
+    uv.foreach_get('vector', arr)
+    uv.foreach_set('vector', [v * 0.5 for v in arr])
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24, radius=1.02, location=(30, 0, 0))
+    hi = bpy.context.active_object
+    hi.name = "ahigh"
+    hi.data.materials.append(_mat("alpha_white", (1, 1, 1, 1), 1.0, 0.3))
+    gs = bpy.context.scene.bake_sets
+    gs.sets.clear()
+    gs.device = 'CPU'
+    gs.output_dir = os.path.join(OUT, "alpha")
+    s = gs.sets.add()
+    s.name = "alpha"
+    s.low = low
+    s.highs.add().obj = hi
+    s.maps = {'ALBEDO'}
+    s.resolution = str(RES)
+    s.margin = 8
+    s.albedo_alpha = True
+    assert bpy.ops.bakesets.bake() == {'FINISHED'}
+    img, p = _img("alpha_albedo")
+    n = RES * RES
+    clear = sum(1 for i in range(n) if p[4 * i + 3] < 0.01)
+    solid = sum(1 for i in range(n) if p[4 * i + 3] > 0.99)
+    print("   alpha: %.0f%% transparent, %.0f%% opaque" % (100 * clear / n, 100 * solid / n))
+    assert img.channels == 4
+    assert clear > 0.5 * n and solid > 0.05 * n, "transparent between the islands, opaque on them"
+    white = sum(1 for i in range(n) if p[4 * i + 3] > 0.99 and min(p[4 * i:4 * i + 3]) > 0.9)
+    assert white > 0.9 * solid, "the opaque texels carry the (white) albedo"
+    s.albedo_alpha = False
+    assert bpy.ops.bakesets.bake() == {'FINISHED'}
+    img, p = _img("alpha_albedo")
+    assert all(p[4 * i + 3] > 0.99 for i in range(0, n, 11)), "no alpha by default"
+    for o in (low, hi):
+        bpy.data.objects.remove(o)
+
+
+def t_clear_vs_overwrite():
+    """Two sets write the same texture (same name): the first on the left half of the UV space,
+    the second on the right half. Not clearing keeps the first one; clearing wipes it."""
+    def half_low(name, x, right):
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8, location=(x, 0, 0))
+        o = bpy.context.active_object
+        o.name = name
+        bpy.ops.object.shade_smooth()
+        uv = o.data.uv_layers.active.uv
+        arr = [0.0] * (2 * len(uv))
+        uv.foreach_get('vector', arr)
+        for i in range(0, len(arr), 2):
+            arr[i] = arr[i] * 0.5 + (0.5 if right else 0.0)
+        uv.foreach_set('vector', arr)
+        return o
+
+    def high(name, x, base):
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24, radius=1.02, location=(x, 0, 0))
+        o = bpy.context.active_object
+        o.name = name
+        bpy.ops.object.shade_smooth()
+        o.data.materials.append(_mat(name + "_m", base, 1.0, 0.4))
+        return o
+
+    lowL, lowR = half_low("lowL", 10, False), half_low("lowR", 20, True)
+    hiL, hiR = high("hiL", 10, (1, 1, 1, 1)), high("hiR", 20, (0.9, 0.05, 0.05, 1))
+    gs = bpy.context.scene.bake_sets
+    gs.sets.clear()
+    gs.device = 'CPU'
+    gs.output_dir = os.path.join(OUT, "shared")
+    for low, hi in ((lowL, hiL), (lowR, hiR)):
+        st = gs.sets.add()
+        st.name = "shared"
+        st.low = low
+        st.highs.add().obj = hi
+        st.maps = {'ALBEDO', 'DUST'}
+        st.resolution = str(RES)
+        st.margin = 8
+    def bake(index):
+        gs.active = index
+        assert bpy.ops.bakesets.bake() == {'FINISHED'}
+        return _img("shared_albedo")[1], _img("shared_dust")[1]
+
+    def region(p, x0, x1, test):
+        return sum(1 for y in range(RES) for x in range(int(x0 * RES), int(x1 * RES))
+                   if test(p[4 * (y * RES + x):4 * (y * RES + x) + 3])) / (RES * RES / 2)
+
+    white = lambda c: min(c) > 0.9
+    red = lambda c: c[0] > 0.7 and c[1] < 0.5
+    a1, d1 = bake(0)
+    assert region(a1, 0, 0.5, white) > 0.3, "set 1 fills the left half with white"
+    left_before = [a1[4 * (y * RES + x) + c] for y in range(0, RES, 3) for x in range(0, int(0.4 * RES), 3) for c in range(3)]
+    gs.sets[1].clear_before_bake = False
+    a2, d2 = bake(1)
+    left_after = [a2[4 * (y * RES + x) + c] for y in range(0, RES, 3) for x in range(0, int(0.4 * RES), 3) for c in range(3)]
+    drift = max(abs(u - v) for u, v in zip(left_before, left_after))
+    ydust = int(RES * 0.9)
+    dl = sum(d2[4 * (ydust * RES + x)] for x in range(0, RES // 2)) / (RES // 2)
+    dr = sum(d2[4 * (ydust * RES + x)] for x in range(RES // 2, RES)) / (RES // 2)
+    print("   not clearing: white left %.0f%% red right %.0f%% drift %.3f | dust left %.2f right %.2f" % (
+        100 * region(a2, 0, 0.5, white), 100 * region(a2, 0.5, 1, red), drift, dl, dr))
+    assert region(a2, 0, 0.5, white) > 0.3, "the first bake survives (Cycles map)"
+    assert region(a2, 0.5, 1, red) > 0.3, "the second bake is there too"
+    assert drift < 0.02, "existing pixels are not altered (colour space round trip)"
+    assert dl > 0.8 and dr > 0.8, "GPU maps are composited too"
+    gs.sets[1].clear_before_bake = True
+    a3, d3 = bake(1)
+    print("   clearing: white left %.1f%%" % (100 * region(a3, 0, 0.5, white)))
+    assert region(a3, 0, 0.5, white) < 0.01, "clearing wipes the first bake"
+    assert sum(d3[4 * (ydust * RES + x)] for x in range(0, RES // 2)) / (RES // 2) < 0.1
+    assert not [i.name for i in bpy.data.images if i.name.startswith("_bs_")]
+    assert not [sc for sc in bpy.data.scenes if sc.name.startswith("_bakesets")]
+    for o in (lowL, lowR, hiL, hiR):
+        bpy.data.objects.remove(o)
+
+
 def t_unregister():
     r = bpy.ops.preferences.addon_disable(module=modname)
     assert r == {'FINISHED'}, r
@@ -412,6 +538,8 @@ for name, fn in [
     ("bake without high poly (self bake)", t_self_bake_without_highs),
     ("rebaking replaces the image datablock", t_second_bake_replaces_image),
     ("progress steps are monotone; cancelling mid-way leaves nothing", t_progress_steps_and_clean_cancel),
+    ("albedo with transparent background", t_albedo_alpha),
+    ("clear vs overwrite: separate elements into one texture", t_clear_vs_overwrite),
     ("unregister leaves nothing", t_unregister),
 ]:
     check(name, fn)
