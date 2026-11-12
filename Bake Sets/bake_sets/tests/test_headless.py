@@ -437,6 +437,62 @@ def t_albedo_alpha():
         bpy.data.objects.remove(o)
 
 
+def t_albedo_takes_material_alpha():
+    """A source material whose texture has transparent pixels must give a transparent albedo there."""
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8, location=(40, 0, 0))
+    low = bpy.context.active_object
+    low.name = "tlow"
+    bpy.ops.object.shade_smooth()
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24, radius=1.02, location=(40, 0, 0))
+    hi = bpy.context.active_object
+    hi.name = "thigh"
+    bpy.ops.object.shade_smooth()
+    tex = bpy.data.images.new("alpha_tex", 64, 64, alpha=True)
+    px_ = []
+    for y in range(64):
+        for x in range(64):
+            px_ += [0.8, 0.1, 0.1, 0.0 if x < 32 else 1.0]
+    tex.pixels.foreach_set(px_)
+    m = bpy.data.materials.new("alpha_mat")
+    m.use_nodes = True
+    nt = m.node_tree
+    pr = nt.nodes["Principled BSDF"]
+    node = nt.nodes.new("ShaderNodeTexImage")
+    node.image = tex
+    node.interpolation = 'Closest'
+    nt.links.new(node.outputs["Color"], pr.inputs["Base Color"])
+    nt.links.new(node.outputs["Alpha"], pr.inputs["Alpha"])
+    hi.data.materials.append(m)
+    gs = bpy.context.scene.bake_sets
+    gs.sets.clear()
+    gs.device = 'CPU'
+    gs.output_dir = os.path.join(OUT, "malpha")
+    st = gs.sets.add()
+    st.name = "malpha"
+    st.low = low
+    st.highs.add().obj = hi
+    st.maps = {'ALBEDO'}
+    st.resolution = str(RES)
+    st.margin = 4
+    st.albedo_alpha = True
+    assert bpy.ops.bakesets.bake() == {'FINISHED'}
+    img, p = _img("malpha_albedo")
+    def mean_alpha(x0, x1):
+        xs = range(int(x0 * RES), int(x1 * RES))
+        return sum(p[4 * (y * RES + x) + 3] for y in range(RES // 4, 3 * RES // 4) for x in xs) / (len(xs) * RES // 2)
+    left, right = mean_alpha(0.1, 0.4), mean_alpha(0.6, 0.9)
+    print("   material alpha: left half %.2f, right half %.2f" % (left, right))
+    assert left < 0.1, "transparent texture pixels give a transparent albedo"
+    assert right > 0.9, "opaque texture pixels stay opaque"
+    st.albedo_alpha = False
+    assert bpy.ops.bakesets.bake() == {'FINISHED'}
+    img, p = _img("malpha_albedo")
+    assert all(p[4 * i + 3] > 0.99 for i in range(0, RES * RES, 11)), "without the option there is no alpha"
+    assert not [i.name for i in bpy.data.images if i.name.startswith("_bs_")]
+    for o in (low, hi):
+        bpy.data.objects.remove(o)
+
+
 def t_clear_vs_overwrite():
     """Two sets write the same texture (same name): the first on the left half of the UV space,
     the second on the right half. Not clearing keeps the first one; clearing wipes it."""
@@ -543,6 +599,7 @@ for name, fn in [
     ("rebaking replaces the image datablock", t_second_bake_replaces_image),
     ("progress steps are monotone; cancelling mid-way leaves nothing", t_progress_steps_and_clean_cancel),
     ("albedo with transparent background", t_albedo_alpha),
+    ("albedo takes the material's own alpha", t_albedo_takes_material_alpha),
     ("clear vs overwrite: separate elements into one texture", t_clear_vs_overwrite),
     ("unregister leaves nothing", t_unregister),
 ]:

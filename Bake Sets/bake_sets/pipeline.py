@@ -82,6 +82,8 @@ def total_cost(bset, gs):
     for key in order:
         if MAP_INFO[key]['engine'] == 'CYCLES':
             c += step_cost(key, bset, gs)
+            if key == 'ALBEDO' and bset.albedo_alpha:
+                c += step_cost(key, bset, gs)
     if 'BENT_NORMAL' in order:
         c += step_cost('BENT_PROBES', bset, gs)
     for key in order:
@@ -119,6 +121,12 @@ def bake_set_steps(context, bset, gs):
                 yield "{}: {}".format(bset.name, MAP_INFO[key]['label']), done
                 images[key] = cycles_bake.bake_map(tb, key, "_bs_{}".format(key), init=existing(key))
                 done += step_cost(key, bset, gs)
+                if key == 'ALBEDO' and bset.albedo_alpha:
+                    # the materials' own transparency (Principled Alpha) goes into the alpha channel
+                    yield "{}: Albedo alpha".format(bset.name), done
+                    alpha_map = cycles_bake.bake_map(tb, 'ALPHA', "_bs_alpha")
+                    images[key] = gl_maps.combine_alpha(tb, images[key], alpha_map, "_bs_ALBEDO_a")
+                    done += step_cost(key, bset, gs)
         if 'BENT_NORMAL' in order:
             yield "{}: Bent Normal (light probes)".format(bset.name), done
             images['_bent'] = cycles_bake.bake_bent_probes(tb, "_bs_bent")

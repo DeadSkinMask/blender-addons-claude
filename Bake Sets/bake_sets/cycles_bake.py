@@ -12,7 +12,7 @@ import bpy
 from .maps import MAP_INFO
 from .scene_copy import id_color
 
-_FILL = {'NORMAL': (0.5, 0.5, 1.0, 1.0), 'BENT_NORMAL': (0.5, 0.5, 1.0, 1.0), 'AO': (1.0, 1.0, 1.0, 1.0), 'THICKNESS': (1.0, 1.0, 1.0, 1.0)}
+_FILL = {'ALPHA': (1.0, 1.0, 1.0, 1.0), 'NORMAL': (0.5, 0.5, 1.0, 1.0), 'BENT_NORMAL': (0.5, 0.5, 1.0, 1.0), 'AO': (1.0, 1.0, 1.0, 1.0), 'THICKNESS': (1.0, 1.0, 1.0, 1.0)}
 _NATIVE = {'NORMAL': 'NORMAL', 'AO': 'AO'}
 
 
@@ -37,7 +37,7 @@ def new_image(name, res, key, float_buffer=False, alpha=False, init=None):
     img = bpy.data.images.new(name, res, res, alpha=alpha, float_buffer=float_buffer)
     fill = _FILL.get(key, (0.0, 0.0, 0.0, 1.0))
     img.generated_color = (fill[0], fill[1], fill[2], 0.0 if alpha else 1.0)
-    img.colorspace_settings.name = 'sRGB' if MAP_INFO[key]['srgb'] else 'Non-Color'
+    img.colorspace_settings.name = 'sRGB' if MAP_INFO.get(key, {}).get('srgb') else 'Non-Color'
     if alpha:
         img.alpha_mode = 'STRAIGHT'
     if init is not None:
@@ -111,6 +111,8 @@ def _wire(tb, mat, key, element_index, p):
                 em.inputs['Strength'].default_value = st.default_value
     elif key == 'ALBEDO':
         _drive(nt, em, pr.inputs['Base Color'] if pr else None, tuple(mat.diffuse_color))
+    elif key == 'ALPHA':
+        _drive(nt, em, pr.inputs['Alpha'] if pr else None, 1.0)
     elif key == 'ROUGHNESS':
         _drive(nt, em, pr.inputs['Roughness'] if pr else None, mat.roughness)
     elif key == 'WHITE':

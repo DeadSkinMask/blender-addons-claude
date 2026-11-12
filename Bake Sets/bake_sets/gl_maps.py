@@ -133,6 +133,13 @@ void main(){
   fragColor = (texelFetch(mask, p, 0).a > 0.5) ? vec4(n.rgb, 1.0) : texelFetch(oldt, p, 0);
 }"""
 
+_ALPHA_F = """
+void main(){
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 c = texelFetch(col, p, 0);
+  fragColor = vec4(c.rgb, c.a * texelFetch(alp, p, 0).r);
+}"""
+
 _FLAT_F = "void main(){ fragColor = vec4(1.0); }"
 _FLAT_V = "void main(){ gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0); }"
 
@@ -202,6 +209,22 @@ def _composite(tb, new_off, old_arr, res):
     if spare is not None:
         spare.free()
     return out
+
+
+def combine_alpha(tb, albedo, alpha_map, name):
+    """New RGBA albedo: colour from `albedo`, alpha = baked-texel alpha x the material's alpha."""
+    from .cycles_bake import new_image
+    res = int(tb.bset.resolution)
+    img = tb.track_image(new_image(name, res, 'ALBEDO', alpha=True))
+    off = gpu.types.GPUOffScreen(res, res, format='RGBA8')
+    try:
+        sh = _quad_shader(_ALPHA_F, (), ["col", "alp"])
+        _draw(off, sh, batch_for_shader(sh, 'TRIS', _QUAD), {},
+              {"col": _tex(albedo), "alp": _tex(alpha_map)})
+        _to_image(off, img, res)
+    finally:
+        off.free()
+    return img
 
 
 def _to_image(off, img, res):

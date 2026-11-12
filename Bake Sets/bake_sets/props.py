@@ -33,7 +33,8 @@ class BAKESETS_PG_set(bpy.types.PropertyGroup):
     albedo_alpha: BoolProperty(
         name="Transparent Background", default=False,
         description="Albedo gets an alpha channel: opaque on the islands and their margin, "
-                    "transparent elsewhere")
+                    "transparent elsewhere, and the materials' own Principled Alpha "
+                    "(e.g. a texture with transparent pixels) is baked into it")
     margin: IntProperty(name="Margin", default=16, min=0, max=128, subtype='PIXEL',
                         description="Padding around UV islands, in pixels")
     cage_extrusion: FloatProperty(name="Extrusion", default=0.1, min=0.0, subtype='DISTANCE',

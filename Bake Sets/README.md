@@ -36,7 +36,7 @@ Bent normal en Godot: asígnalo en `StandardMaterial3D` → Bent Normal (la mall
 
 ## Fondo transparente y limpiar / sobrescribir
 
-- **Transparent Background** (aparece con Albedo): el albedo se guarda con canal alpha, opaco en las islas y su margen y transparente en el resto.
+- **Transparent Background** (aparece con Albedo): el albedo se guarda con canal alpha, opaco en las islas y su margen y transparente en el resto. Además hornea el **alpha propio de los materiales de origen** (el input Alpha del Principled, por ejemplo conectado al Alpha de una textura con píxeles transparentes) y lo multiplica en el canal alpha. Solo se lee el input Alpha del Principled: montajes con Transparent BSDF o Mix Shader no se detectan. Sin esta opción el albedo es RGB opaco.
 - **Clear Before Bake** (activado por defecto): cada bake parte de una textura vacía. Desactivado, si ya existe `<set>_<mapa>.png` con la misma resolución, se hornea **encima**: solo se reemplazan las islas del low poly (más su margen) y el resto se conserva. Sirve para hornear elementos distintos por separado en una misma textura: crea un set por elemento con el **mismo nombre** (misma textura de salida) y UV en zonas distintas, y desactiva Clear en los siguientes. Aplica a todos los mapas, también a los calculados en GPU. Si el archivo no existe o tiene otra resolución, parte de cero.
 - Si activas alpha pero sigues sin limpiar sobre un archivo sin alpha, el fondo anterior se queda opaco.
 
