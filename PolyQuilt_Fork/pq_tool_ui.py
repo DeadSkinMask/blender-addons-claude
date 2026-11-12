@@ -81,6 +81,9 @@ def draw_settings_ui( opetator , context, layout, tool  , ui ):
         op.action = 'PIN'
         op = row.operator( "mesh.pq_pin_selected" , text = "Unpin" , icon = 'UNPINNED' )
         op.action = 'UNPIN'
+        row = layout.row( align = True )
+        row.prop( preferences , "show_pinned" , text = "Show Pinned" )
+        row.prop( preferences , "pinned_color" , text = "" )
 
     if "RETOPO" in ui or "BRUSH" in ui :
         row = layout.row(align=True)

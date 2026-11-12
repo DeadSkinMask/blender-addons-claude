@@ -113,12 +113,10 @@ class PQ_Gizmo_Preselect( bpy.types.Gizmo):
             else :
                 self.DrawHighlight()
 
-    PIN_COLOR = (0.0, 1.0, 1.0, 1.0)
-
     def draw_pinned( self , context ) :
         """Cyan dots on the vertices that have weight in 'vertex_pinned' (vertex select mode only)."""
         try :
-            if not context.tool_settings.mesh_select_mode[0] :
+            if not self.preferences.show_pinned or not context.tool_settings.mesh_select_mode[0] :
                 return
             bmo = self.bmo
             if bmo is None or not bmo.bm.is_valid :
@@ -158,7 +156,7 @@ class PQ_Gizmo_Preselect( bpy.types.Gizmo):
             if pos :
                 shader = gpu.shader.from_builtin('POINT_UNIFORM_COLOR')
                 shader.bind()
-                shader.uniform_float("color", self.PIN_COLOR)
+                shader.uniform_float("color", tuple(self.preferences.pinned_color))
                 gpu.state.blend_set("ALPHA")
                 gpu.state.point_size_set( 8.0 )
                 batch_for_shader( shader , 'POINTS' , {"pos": pos} ).draw( shader )

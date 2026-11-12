@@ -55,6 +55,22 @@ class PolyQuiltPreferences(AddonPreferences):
         subtype='COLOR'
     )
 
+    show_pinned : BoolProperty(
+        name="Show Pinned Vertices",
+        description="Draw the vertices of the 'vertex_pinned' group in vertex select mode",
+        default=True,
+    )
+
+    pinned_color : FloatVectorProperty(
+        name="Pinned Color",
+        description="Color of the pinned vertices overlay",
+        default=(0.0,1.0,1.0,1.0),
+        min=0.0,
+        max=1.0,
+        size=4,
+        subtype='COLOR',
+    )
+
     split_color : FloatVectorProperty(
         name="SplitColor",
         description="Split Color",
@@ -267,6 +283,11 @@ class PolyQuiltPreferences(AddonPreferences):
         box.row().prop(self, "makepoly_color" , text = "MakePolyColor")
         box.row().prop(self, "split_color" , text = "SplitColor" )
         box.row().prop(self, "delete_color" , text = "DeleteColor")
+        row = box.row()
+        row.prop(self, "show_pinned" , text = "Show Pinned Vertices")
+        sub = row.row()
+        sub.active = self.show_pinned
+        sub.prop(self, "pinned_color" , text = "")
 
         layout.prop( self, "keymap_setting_expanded", text="Keymap setting",
             icon='TRIA_DOWN' if self.keymap_setting_expanded else 'TRIA_RIGHT')
