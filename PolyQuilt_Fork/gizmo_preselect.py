@@ -18,6 +18,9 @@ from .QMesh import *
 from .utils import draw_util
 from .subtools import *
 from .pq_tool import *
+from .subtools.subtool_brush_pin import pin_state, PIN_GROUP_NAME
+import gpu
+from gpu_extras.batch import batch_for_shader
 
 class PQ_Gizmo_Preselect( bpy.types.Gizmo):
     bl_idname = "MESH_GT_PQ_Preselect"
@@ -34,6 +37,8 @@ class PQ_Gizmo_Preselect( bpy.types.Gizmo):
         self.tool = None
         self.invalid = False
         self.temp = bmesh.new()
+        self.pin_cache = None
+        self.pin_rev = -1
 
     def setup(self):
         self.bmo = None        
@@ -99,6 +104,8 @@ class PQ_Gizmo_Preselect( bpy.types.Gizmo):
         if PQ_GizmoGroup_Base.running_polyquilt  :
             self.DrawHighlight = None
 
+        self.draw_pinned( context )
+
         if self.DrawHighlight != None :
             if type(self.DrawHighlight) == list :
                 for drawHighlight in self.DrawHighlight :
@@ -106,7 +113,60 @@ class PQ_Gizmo_Preselect( bpy.types.Gizmo):
             else :
                 self.DrawHighlight()
 
+    PIN_COLOR = (0.0, 1.0, 1.0, 1.0)
+
+    def draw_pinned( self , context ) :
+        """Cyan dots on the vertices that have weight in 'vertex_pinned' (vertex select mode only)."""
+        try :
+            if not context.tool_settings.mesh_select_mode[0] :
+                return
+            bmo = self.bmo
+            if bmo is None or not bmo.bm.is_valid :
+                return
+            obj = bmo.obj
+            group = obj.vertex_groups.get( PIN_GROUP_NAME )
+            layer = bmo.bm.verts.layers.deform.active
+            if group is None or layer is None :
+                return
+            bm = bmo.bm
+            if self.pin_cache is None or self.pin_rev != pin_state["rev"] :
+                index = group.index
+                self.pin_cache = [ v for v in bm.verts if not v.hide and v[layer].get( index , 0.0 ) > 0.0 ]
+                self.pin_rev = pin_state["rev"]
+            if not self.pin_cache :
+                return
+
+            rv3d = context.region_data
+            matrix_world = obj.matrix_world
+            normal_matrix = matrix_world.to_3x3()
+            if rv3d.is_perspective :
+                eye = rv3d.view_matrix.inverted().translation
+            else :
+                eye = None
+                view_dir = rv3d.view_matrix.inverted().to_3x3() @ mathutils.Vector((0,0,-1))
+            pos = []
+            for v in self.pin_cache :
+                if not v.is_valid :
+                    self.pin_cache = None
+                    return
+                world = matrix_world @ v.co
+                n = normal_matrix @ v.normal
+                to_vert = ( world - eye ) if eye is not None else view_dir
+                if n.dot( to_vert ) > 0.0 :   # facing away from the camera
+                    continue
+                pos.append( world )
+            if pos :
+                shader = gpu.shader.from_builtin('POINT_UNIFORM_COLOR')
+                shader.bind()
+                shader.uniform_float("color", self.PIN_COLOR)
+                gpu.state.blend_set("ALPHA")
+                gpu.state.point_size_set( 8.0 )
+                batch_for_shader( shader , 'POINTS' , {"pos": pos} ).draw( shader )
+        except ( ReferenceError , ValueError ) :
+            self.pin_cache = None
+
     def refresh( self , context ) :
+        self.pin_cache = None
         if self.bmo != None :
             self.invalid = True
             self.currentElement = ElementItem.Empty()

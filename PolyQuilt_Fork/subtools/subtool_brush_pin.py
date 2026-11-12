@@ -9,6 +9,9 @@ from ..QMesh import *
 
 PIN_GROUP_NAME = "vertex_pinned"
 
+# bumped whenever pin weights change so the gizmo rebuilds its overlay cache
+pin_state = {"rev": 0}
+
 
 class SubToolBrushPin(SubToolBrushRelax) :
     """Paints weight into the 'vertex_pinned' group (used by the Smooth brush as a mask)."""
@@ -69,6 +72,7 @@ class SubToolBrushPin(SubToolBrushRelax) :
                     w = 1.0
             dvert[index] = w
 
+        pin_state["rev"] += 1
         self.bmo.UpdateMesh( changeTopology = True , loop_triangles = False , destructive = False )
 
 
@@ -117,5 +121,6 @@ class MESH_OT_pq_pin_selected(bpy.types.Operator) :
                     del v[layer][group.index]
                 count += 1
             bmesh.update_edit_mesh( obj.data , loop_triangles = False , destructive = False )
+            pin_state["rev"] += 1
         self.report({'INFO'}, "%s %d vertices" % ( "Pinned" if self.action == 'PIN' else "Unpinned" , count ))
         return {'FINISHED'}

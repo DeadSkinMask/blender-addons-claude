@@ -75,9 +75,9 @@ class MainToolBrush(MainTool) :
 
         radius = display.dot( gizmo.preferences.brush_size )
         strength = gizmo.preferences.brush_strength
-        mode = gizmo.keyitem.properties.brush_type
 
-        if gizmo.keyitem.properties.is_property_set("brush_type") :
+        keyitem = gizmo.keyitem
+        if keyitem is not None and keyitem.properties.is_property_set("brush_type") :
             mode = gizmo.keyitem.properties.brush_type
         else :
             from bl_ui.space_toolsystem_common import ToolSelectPanelHelper
