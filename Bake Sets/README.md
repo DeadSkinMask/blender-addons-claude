@@ -17,7 +17,7 @@ Se escribe `<set>_<mapa>.png` y la imagen queda cargada en el .blend (volver a h
 | Mapa | Cómo se calcula |
 |---|---|
 | Tangent Normal | Cycles, proyectado desde los high poly (Y+ OpenGL o Y- DirectX, opción global) |
-| Ambient Occlusion | Cycles (`AO Samples`) |
+| Ambient Occlusion | Cycles (`AO Samples`). Si algún material de origen tiene transparencia (Principled Alpha), el bake nativo sale oscuro donde es transparente; el addon lo detecta, hornea el alpha y lo corrige (donde no hay superficie el AO queda en blanco), así la ORM no hereda zonas negras. Los rayos sí atraviesan las zonas transparentes |
 | Thickness | Cycles con el nodo AO "Inside" (blanco = grueso, negro = delgado) |
 | Albedo, Roughness, Metallic | Cycles **EMIT** de 1 sample leyendo directo el Base Color / Roughness / Metallic del Principled (sigue las texturas conectadas). No usa el bake DIFFUSE de Blender, que excluye la componente glossy y deja negros los metales blancos |
 | Emission | Cycles EMIT de 1 sample: Emission Color × Emission Strength del Principled (o lo conectado); sin emisión sale negro |

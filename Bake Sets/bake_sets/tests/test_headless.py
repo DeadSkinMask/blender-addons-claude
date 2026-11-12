@@ -471,11 +471,24 @@ def t_albedo_takes_material_alpha():
     st.name = "malpha"
     st.low = low
     st.highs.add().obj = hi
-    st.maps = {'ALBEDO'}
+    st.maps = {'ALBEDO', 'AO', 'ORM'}
     st.resolution = str(RES)
     st.margin = 4
     st.albedo_alpha = True
     assert bpy.ops.bakesets.bake() == {'FINISHED'}
+    # ORM / AO on the transparent half: Cycles' AO bake is black there, it must come out white
+    ao = _img("malpha_ao")[1]
+    orm = _img("malpha_orm")[1]
+    def mean_ch(q, c, x0, x1):
+        xs = range(int(x0 * RES), int(x1 * RES))
+        return sum(q[4 * (y * RES + x) + c] for y in range(RES // 4, 3 * RES // 4) for x in xs) / (len(xs) * RES // 2)
+    print("   AO left %.2f right %.2f | ORM left R %.2f G %.2f B %.2f" % (
+        mean_ch(ao, 0, 0.1, 0.4), mean_ch(ao, 0, 0.6, 0.9),
+        mean_ch(orm, 0, 0.1, 0.4), mean_ch(orm, 1, 0.1, 0.4), mean_ch(orm, 2, 0.1, 0.4)))
+    assert mean_ch(ao, 0, 0.1, 0.4) > 0.8, "no black AO where the source texture is transparent"
+    assert mean_ch(orm, 0, 0.1, 0.4) > 0.8, "ORM inherits a clean AO"
+    assert 0.4 < mean_ch(orm, 1, 0.1, 0.4) < 0.6, "roughness is untouched there"
+    assert mean_ch(ao, 0, 0.6, 0.9) > 0.8
     img, p = _img("malpha_albedo")
     def mean_alpha(x0, x1):
         xs = range(int(x0 * RES), int(x1 * RES))

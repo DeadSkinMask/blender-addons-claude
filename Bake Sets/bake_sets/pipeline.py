@@ -112,6 +112,12 @@ def bake_set_steps(context, bset, gs):
             return None
         return cycles_bake.read_existing(_path(bset, gs, key), res)
 
+    def alpha_map():
+        """The sources' own alpha, baked once per set (EMIT of the Principled Alpha)."""
+        if '_alpha' not in images:
+            images['_alpha'] = cycles_bake.bake_map(tb, 'ALPHA', "_bs_alpha")
+        return images['_alpha']
+
     done = 0.0
     yield "Preparing {}".format(bset.name), done
     with TempBake(context, bset, gs) as tb:
@@ -121,11 +127,18 @@ def bake_set_steps(context, bset, gs):
                 yield "{}: {}".format(bset.name, MAP_INFO[key]['label']), done
                 images[key] = cycles_bake.bake_map(tb, key, "_bs_{}".format(key), init=existing(key))
                 done += step_cost(key, bset, gs)
+                if key == 'AO' and cycles_bake.sources_have_alpha(tb):
+                    # Cycles' AO bake is multiplied by the source materials' alpha (black where a
+                    # texture is transparent, which ORM then inherits): undo that.
+                    # NOTE: the alpha bake rewires the source materials to emission, so every
+                    # native bake (NORMAL, AO) must come before it; MAP_ORDER guarantees that.
+                    yield "{}: fixing AO on transparent materials".format(bset.name), done
+                    images['AO'] = gl_maps.fix_ao(tb, images['AO'], alpha_map(), "_bs_AO_fix")
+                    done += step_cost('AO', bset, gs) * 0.1
                 if key == 'ALBEDO' and bset.albedo_alpha:
                     # the materials' own transparency (Principled Alpha) goes into the alpha channel
                     yield "{}: Albedo alpha".format(bset.name), done
-                    alpha_map = cycles_bake.bake_map(tb, 'ALPHA', "_bs_alpha")
-                    images[key] = gl_maps.combine_alpha(tb, images[key], alpha_map, "_bs_ALBEDO_a")
+                    images[key] = gl_maps.combine_alpha(tb, images[key], alpha_map(), "_bs_ALBEDO_a")
                     done += step_cost(key, bset, gs)
         if 'BENT_NORMAL' in order:
             yield "{}: Bent Normal (light probes)".format(bset.name), done

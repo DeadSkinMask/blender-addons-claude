@@ -64,6 +64,18 @@ def _find_principled(nt, out):
     return None
 
 
+def sources_have_alpha(tb):
+    """True if any source material is (partly) transparent through the Principled Alpha input."""
+    for src in tb.sources:
+        for mat in tb.materials[src]:
+            pr = _find_principled(mat.node_tree, _output(mat.node_tree))
+            if pr is not None:
+                a = pr.inputs['Alpha']
+                if a.is_linked or a.default_value < 0.999:
+                    return True
+    return False
+
+
 def _output(nt):
     out = nt.get_output_node('ALL')
     if out is None:

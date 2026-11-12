@@ -140,6 +140,16 @@ void main(){
   fragColor = vec4(c.rgb, c.a * texelFetch(alp, p, 0).r);
 }"""
 
+_FIXAO_F = """
+void main(){
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  float a = texelFetch(alp, p, 0).r;
+  float v = texelFetch(src, p, 0).r;
+  // the native AO bake comes out multiplied by the material's alpha: undo it, and where there is
+  // no surface at all (alpha 0) there is no occlusion information, so use white
+  fragColor = vec4(vec3(a > 0.02 ? min(1.0, v / a) : 1.0), 1.0);
+}"""
+
 _FLAT_F = "void main(){ fragColor = vec4(1.0); }"
 _FLAT_V = "void main(){ gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0); }"
 
@@ -221,6 +231,22 @@ def combine_alpha(tb, albedo, alpha_map, name):
         sh = _quad_shader(_ALPHA_F, (), ["col", "alp"])
         _draw(off, sh, batch_for_shader(sh, 'TRIS', _QUAD), {},
               {"col": _tex(albedo), "alp": _tex(alpha_map)})
+        _to_image(off, img, res)
+    finally:
+        off.free()
+    return img
+
+
+def fix_ao(tb, ao, alpha_map, name):
+    """AO without the darkening the bake gets from transparent source materials."""
+    from .cycles_bake import new_image
+    res = int(tb.bset.resolution)
+    img = tb.track_image(new_image(name, res, 'AO'))
+    off = gpu.types.GPUOffScreen(res, res, format='RGBA8')
+    try:
+        sh = _quad_shader(_FIXAO_F, (), ["src", "alp"])
+        _draw(off, sh, batch_for_shader(sh, 'TRIS', _QUAD), {},
+              {"src": _tex(ao), "alp": _tex(alpha_map)})
         _to_image(off, img, res)
     finally:
         off.free()
