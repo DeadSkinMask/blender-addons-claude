@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import bpy
 
+from . import props
 from .maps import MAP_ITEMS
 
 
@@ -79,6 +80,10 @@ class BAKESETS_PT_maps(bpy.types.Panel):
         c = self.layout.column()
         c.prop(s, "resolution")
         c.prop(s, "margin")
+        c.prop(s, "output_name", placeholder=s.name)
+        n = len(props._others(s))
+        if n:
+            c.label(text="Shares the texture and these settings with {} other set(s)".format(n), icon='LINKED')
         c.prop(s, "clear_before_bake")
         if 'ALBEDO' in wants:
             c.prop(s, "albedo_alpha")

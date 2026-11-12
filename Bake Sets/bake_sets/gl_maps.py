@@ -150,6 +150,21 @@ void main(){
   fragColor = vec4(vec3(a > 0.02 ? min(1.0, v / a) : 1.0), 1.0);
 }"""
 
+_FIXN_F = """
+void main(){
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec3 s = texelFetch(src, p, 0).rgb;
+  float a = texelFetch(alp, p, 0).r;
+  vec3 n = vec3(0.0, 0.0, 1.0);
+  if (a > 0.02) {
+    // the self-bake of a transparent material comes out as alpha * normal: undo it
+    vec3 v = (s * 2.0 - 1.0) / a;
+    float l = length(v);
+    if (l > 1e-4) n = v / l;
+  }
+  fragColor = vec4(n * 0.5 + 0.5, 1.0);
+}"""
+
 _FLAT_F = "void main(){ fragColor = vec4(1.0); }"
 _FLAT_V = "void main(){ gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0); }"
 
@@ -207,8 +222,8 @@ def _composite(tb, new_off, old_arr, res):
     """Keep `old_arr` (an existing texture) everywhere except on the low poly's islands + margin,
     where the freshly computed map goes. Returns the composited offscreen (caller frees it)."""
     flat = _shader(_FLAT_V, _FLAT_F, [('VEC2', 'pos')])
-    pos, _, _ = _frame_batch(tb)
     cov = gpu.types.GPUOffScreen(res, res, format='RGBA8')
+    pos, _, _ = _frame_batch(tb, tb.low)
     _draw(cov, flat, batch_for_shader(flat, 'TRIS', {"pos": pos}), {}, {})
     mask, spare = _dilate(cov, tb.bset.margin, res, opaque=False)
     sh = _quad_shader(_COMP_F, (), ["newt", "oldt", "mask"])
@@ -239,14 +254,23 @@ def combine_alpha(tb, albedo, alpha_map, name):
 
 def fix_ao(tb, ao, alpha_map, name):
     """AO without the darkening the bake gets from transparent source materials."""
+    return _fix_alpha(tb, ao, alpha_map, name, 'AO', _FIXAO_F)
+
+
+def fix_normal(tb, normal, alpha_map, name):
+    """Tangent normal of a transparent self-baked material: neutral blue instead of grey."""
+    return _fix_alpha(tb, normal, alpha_map, name, 'NORMAL', _FIXN_F)
+
+
+def _fix_alpha(tb, src, alpha_map, name, key, frag):
     from .cycles_bake import new_image
     res = int(tb.bset.resolution)
-    img = tb.track_image(new_image(name, res, 'AO'))
+    img = tb.track_image(new_image(name, res, key))
     off = gpu.types.GPUOffScreen(res, res, format='RGBA8')
     try:
-        sh = _quad_shader(_FIXAO_F, (), ["src", "alp"])
+        sh = _quad_shader(frag, (), ["src", "alp"])
         _draw(off, sh, batch_for_shader(sh, 'TRIS', _QUAD), {},
-              {"src": _tex(ao), "alp": _tex(alpha_map)})
+              {"src": _tex(src), "alp": _tex(alpha_map)})
         _to_image(off, img, res)
     finally:
         off.free()
@@ -264,11 +288,11 @@ def _to_image(off, img, res):
     img.update()
 
 
-def _frame_batch(tb, uv_name=None):
+def _frame_batch(tb, low):
     """Triangles of the evaluated low poly: UV as position + normal + tangent (w = bitangent sign)."""
     dg = tb.view_layer.depsgraph
     tb.view_layer.update()
-    ev = tb.low.evaluated_get(dg)
+    ev = low.evaluated_get(dg)
     me = bpy.data.meshes.new_from_object(ev, depsgraph=dg)
     try:
         layer = me.uv_layers.active
@@ -327,7 +351,7 @@ def render(tb, key, images, name, flip_y, existing=None):
                          ifaces=[('VEC3', 'v_n'), ('VEC3', 'v_t')], flats=[('FLOAT', 'v_s')],
                          pushes=[('MAT4', 'normal_matrix'), ('FLOAT', 'flip_y')],
                          samplers=["e0map", "exmap", "eymap", "ezmap"])
-            pos, nn, tt = _frame_batch(tb)
+            pos, nn, tt = _frame_batch(tb, tb.low)
             batch = batch_for_shader(sh, 'TRIS', {"pos": pos, "nrm": nn, "tan": tt})
             nm = tb.low.matrix_world.to_3x3().inverted_safe().transposed().to_4x4()
             e = images['_bent']
@@ -342,10 +366,10 @@ def render(tb, key, images, name, flip_y, existing=None):
                          pushes=[('MAT4', 'normal_matrix'), ('FLOAT', 'threshold'), ('FLOAT', 'softness'),
                                  ('FLOAT', 'ground'), ('FLOAT', 'ao_strength'), ('FLOAT', 'mode'), ('FLOAT', 'flip_y')],
                          samplers=["nmap", "ao"])
-            pos, nn, tt = _frame_batch(tb)
+            paint = key == 'PAINT_BASE'
+            pos, nn, tt = _frame_batch(tb, tb.low)
             batch = batch_for_shader(sh, 'TRIS', {"pos": pos, "nrm": nn, "tan": tt})
             nm = tb.low.matrix_world.to_3x3().inverted_safe().transposed().to_4x4()
-            paint = key == 'PAINT_BASE'
             _draw(off, sh, batch,
                   {"normal_matrix": ('f', nm), "threshold": ('f', p.dust_threshold),
                    "softness": ('f', max(p.dust_softness, 1e-4)), "ground": ('f', p.paint_ground),

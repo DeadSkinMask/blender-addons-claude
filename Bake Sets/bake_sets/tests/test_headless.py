@@ -148,6 +148,13 @@ def t_errors():
         raise AssertionError("expected an error for no maps")
     except RuntimeError as e:
         assert "no maps" in str(e), e
+    gs.active = 99
+    try:
+        bpy.ops.bakesets.bake()
+        raise AssertionError("expected an error when no set is selected")
+    except RuntimeError as e:
+        assert "No bake set selected" in str(e), e
+    gs.active = 0
 
 
 def t_bake_all():
@@ -506,6 +513,61 @@ def t_albedo_takes_material_alpha():
         bpy.data.objects.remove(o)
 
 
+def t_self_bake_with_transparent_material():
+    """No high poly, low poly material with a normal map and a half transparent texture: the baked
+    normal must be neutral blue (not a zero length grey) where it is transparent, unchanged elsewhere."""
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8, location=(50, 0, 0))
+    low = bpy.context.active_object
+    low.name = "salow"
+    bpy.ops.object.shade_smooth()
+    tex = bpy.data.images.new("sa_t", 64, 64, alpha=True)
+    tex.pixels.foreach_set([v for y in range(64) for x in range(64) for v in (0.6, 0.6, 0.6, 0.0 if x < 32 else 1.0)])
+    nmap = bpy.data.images.new("sa_n", 8, 8)
+    nmap.colorspace_settings.name = 'Non-Color'
+    nmap.pixels.foreach_set([v for y in range(8) for x in range(8)
+                             for v in ((0.8, 0.5, 0.9, 1.0) if x % 2 else (0.2, 0.5, 0.9, 1.0))])
+    m = bpy.data.materials.new("sa_m")
+    m.use_nodes = True
+    nt = m.node_tree
+    pr = nt.nodes["Principled BSDF"]
+    a = nt.nodes.new("ShaderNodeTexImage")
+    a.image = tex
+    a.interpolation = 'Closest'
+    nt.links.new(a.outputs["Color"], pr.inputs["Base Color"])
+    nt.links.new(a.outputs["Alpha"], pr.inputs["Alpha"])
+    n = nt.nodes.new("ShaderNodeTexImage")
+    n.image = nmap
+    nm = nt.nodes.new("ShaderNodeNormalMap")
+    nt.links.new(n.outputs["Color"], nm.inputs["Color"])
+    nt.links.new(nm.outputs["Normal"], pr.inputs["Normal"])
+    low.data.materials.append(m)
+    gs = bpy.context.scene.bake_sets
+    gs.sets.clear()
+    gs.device = 'CPU'
+    gs.output_dir = os.path.join(OUT, "selfalpha")
+    st = gs.sets.add()
+    st.name = "sa"
+    st.low = low
+    st.maps = {'NORMAL', 'ORM'}
+    st.resolution = str(RES)
+    st.margin = 4
+    assert bpy.ops.bakesets.bake() == {'FINISHED'}
+    nrm = _img("sa_normal")[1]
+    orm = _img("sa_orm")[1]
+    def mean_ch(q, c, x0, x1):
+        xs = range(int(x0 * RES), int(x1 * RES))
+        return sum(q[4 * (y * RES + x) + c] for y in range(RES // 4, 3 * RES // 4) for x in xs) / (len(xs) * RES // 2)
+    left = tuple(mean_ch(nrm, c, 0.1, 0.4) for c in range(3))
+    right = tuple(mean_ch(nrm, c, 0.6, 0.9) for c in range(3))
+    print("   self-bake normal: transparent half %s, opaque half %s" % (
+        tuple(round(v, 2) for v in left), tuple(round(v, 2) for v in right)))
+    assert left[2] > 0.95 and abs(left[0] - 0.5) < 0.02 and abs(left[1] - 0.5) < 0.02, "neutral blue where transparent"
+    assert right[2] < 0.995 and right[2] > 0.9, "the normal map detail survives where it is opaque"
+    assert mean_ch(orm, 0, 0.1, 0.4) > 0.8, "ORM has no dark AO there"
+    # without transparency nothing changes: the opaque half of the same bake must match a plain bake
+    bpy.data.objects.remove(low)
+
+
 def t_clear_vs_overwrite():
     """Two sets write the same texture (same name): the first on the left half of the UV space,
     the second on the right half. Not clearing keeps the first one; clearing wipes it."""
@@ -538,12 +600,14 @@ def t_clear_vs_overwrite():
     gs.output_dir = os.path.join(OUT, "shared")
     for low, hi in ((lowL, hiL), (lowR, hiR)):
         st = gs.sets.add()
-        st.name = "shared"
+        st.name = low.name          # the automatic set names stay different...
+        st.output_name = "shared"   # ...and both write the texture "shared"
         st.low = low
         st.highs.add().obj = hi
         st.maps = {'ALBEDO', 'DUST'}
         st.resolution = str(RES)
         st.margin = 8
+    assert gs.sets[0].resolution == gs.sets[1].resolution == str(RES)
     def bake(index):
         gs.active = index
         assert bpy.ops.bakesets.bake() == {'FINISHED'}
@@ -582,6 +646,37 @@ def t_clear_vs_overwrite():
         bpy.data.objects.remove(o)
 
 
+def t_texture_name_shares_settings():
+    """Sets with the same Texture Name share their baking settings; objects and Clear stay per set."""
+    gs = bpy.context.scene.bake_sets
+    gs.sets.clear()
+    a, b, c, d = (gs.sets.add() for _ in range(4))
+    a.name, b.name, c.name, d.name = "a", "b", "c", "d"
+    b.resolution = '512'
+    b.margin = 12
+    b.maps = {'NORMAL', 'AO'}
+    b.output_name = "tex"
+    c.output_name = "tex"         # joins the group: adopts b's settings
+    assert (c.resolution, c.margin, set(c.maps)) == ('512', 12, {'NORMAL', 'AO'}), "joining adopts the group's settings"
+    c.margin = 20                 # editing one updates the group
+    c.maps = {'ALBEDO'}
+    assert b.margin == 20 and set(b.maps) == {'ALBEDO'}, "edits are shared"
+    b.dust_threshold = 0.25
+    assert c.dust_threshold == 0.25, "map parameters are shared too"
+    b.clear_before_bake = False
+    assert c.clear_before_bake, "Clear Before Bake stays per set"
+    assert a.margin == 16 and a.resolution == '2048' and d.margin == 16, "other textures are unaffected"
+    a.output_name = "tex"         # a third one joins later
+    assert a.margin == 20 and a.dust_threshold == 0.25
+    # the default (empty Texture Name) groups by set name: two sets called the same share too
+    d.name = "a"
+    d.output_name = ""
+    a.output_name = ""
+    d.resolution = '1024'
+    assert a.resolution == '1024', "same set name = same texture = shared settings"
+    gs.sets.clear()
+
+
 def t_unregister():
     r = bpy.ops.preferences.addon_disable(module=modname)
     assert r == {'FINISHED'}, r
@@ -613,7 +708,9 @@ for name, fn in [
     ("progress steps are monotone; cancelling mid-way leaves nothing", t_progress_steps_and_clean_cancel),
     ("albedo with transparent background", t_albedo_alpha),
     ("albedo takes the material's own alpha", t_albedo_takes_material_alpha),
+    ("self bake with a transparent material: neutral normal", t_self_bake_with_transparent_material),
     ("clear vs overwrite: separate elements into one texture", t_clear_vs_overwrite),
+    ("sets with the same Texture Name share their settings", t_texture_name_shares_settings),
     ("unregister leaves nothing", t_unregister),
 ]:
     check(name, fn)

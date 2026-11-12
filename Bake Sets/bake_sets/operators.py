@@ -117,6 +117,9 @@ class BAKESETS_OT_bake(bpy.types.Operator):
 
     def _validate(self, context, sets):
         gs = _gs(context)
+        if not sets:
+            self.report({'ERROR'}, "No bake set selected: pick one in the list")
+            return False
         for s in sets:
             errs = pipeline.validate(s, gs)
             if errs:

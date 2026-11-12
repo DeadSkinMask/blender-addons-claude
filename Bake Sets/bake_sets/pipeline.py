@@ -15,6 +15,11 @@ def output_dir(gs):
     return bpy.path.abspath(gs.output_dir)
 
 
+def prefix(bset):
+    """File name prefix of the textures: the Texture Name, or the set name when it is empty."""
+    return bset.output_name.strip() or bset.name
+
+
 def validate(bset, gs):
     """Return a list of human readable problems (empty = ready to bake)."""
     errs = []
@@ -37,7 +42,7 @@ def validate(bset, gs):
 
 
 def _path(bset, gs, key):
-    return os.path.join(output_dir(gs), "{}_{}.png".format(bset.name, MAP_INFO[key]['suffix']))
+    return os.path.join(output_dir(gs), "{}_{}.png".format(prefix(bset), MAP_INFO[key]['suffix']))
 
 
 def _srgb(key):
@@ -68,9 +73,9 @@ def step_cost(key, bset, gs):
     elif key == 'BENT_PROBES':
         c = 4 * gs.ao_samples
     elif key == 'SAVE':
-        c = 1.0
+        return 1.0 * area
     elif MAP_INFO.get(key, {}).get('engine') == 'GL':
-        c = 1.0
+        return 1.0 * area
     else:
         c = gs.samples + 1.0
     return c * area
@@ -99,6 +104,7 @@ def bake_set_steps(context, bset, gs):
     errs = validate(bset, gs)
     if errs:
         raise ValueError("; ".join(errs))
+    clear = bset.clear_before_bake
     order, wanted = resolve(set(bset.maps))
     folder = output_dir(gs)
     gl_maps.init()
@@ -108,7 +114,7 @@ def bake_set_steps(context, bset, gs):
 
     def existing(key):
         """Pixels to keep when not clearing (None = start from empty)."""
-        if bset.clear_before_bake or key not in wanted:
+        if clear or key not in wanted:
             return None
         return cycles_bake.read_existing(_path(bset, gs, key), res)
 
@@ -118,28 +124,43 @@ def bake_set_steps(context, bset, gs):
             images['_alpha'] = cycles_bake.bake_map(tb, 'ALPHA', "_bs_alpha")
         return images['_alpha']
 
+    fixed = [False]
+
+    def native_fixes():
+        """Cycles' native NORMAL / AO bakes come out multiplied by the transparency of the
+        materials they read (AO: the sources', black under a transparent texture, which ORM
+        inherits; NORMAL: the self-baked material's, a grey of zero length). Undo that with the
+        baked alpha. NOTE: baking the alpha rewires the source materials to emission, so this runs
+        after the last native bake and before the first EMIT one."""
+        if fixed[0]:
+            return
+        fixed[0] = True
+        if not cycles_bake.sources_have_alpha(tb):
+            return
+        if 'AO' in images:
+            yield "{}: fixing AO on transparent materials".format(bset.name), done
+            images['AO'] = gl_maps.fix_ao(tb, images['AO'], alpha_map(), "_bs_AO_fix")
+        if 'NORMAL' in images and not tb.projected:
+            yield "{}: fixing the normal on transparent materials".format(bset.name), done
+            images['NORMAL'] = gl_maps.fix_normal(tb, images['NORMAL'], alpha_map(), "_bs_NORMAL_fix")
+
     done = 0.0
     yield "Preparing {}".format(bset.name), done
     with TempBake(context, bset, gs) as tb:
         done += 1.0
         for key in order:
             if MAP_INFO[key]['engine'] == 'CYCLES':
+                if key not in ('NORMAL', 'AO'):
+                    yield from native_fixes()
                 yield "{}: {}".format(bset.name, MAP_INFO[key]['label']), done
                 images[key] = cycles_bake.bake_map(tb, key, "_bs_{}".format(key), init=existing(key))
                 done += step_cost(key, bset, gs)
-                if key == 'AO' and cycles_bake.sources_have_alpha(tb):
-                    # Cycles' AO bake is multiplied by the source materials' alpha (black where a
-                    # texture is transparent, which ORM then inherits): undo that.
-                    # NOTE: the alpha bake rewires the source materials to emission, so every
-                    # native bake (NORMAL, AO) must come before it; MAP_ORDER guarantees that.
-                    yield "{}: fixing AO on transparent materials".format(bset.name), done
-                    images['AO'] = gl_maps.fix_ao(tb, images['AO'], alpha_map(), "_bs_AO_fix")
-                    done += step_cost('AO', bset, gs) * 0.1
                 if key == 'ALBEDO' and bset.albedo_alpha:
                     # the materials' own transparency (Principled Alpha) goes into the alpha channel
                     yield "{}: Albedo alpha".format(bset.name), done
                     images[key] = gl_maps.combine_alpha(tb, images[key], alpha_map(), "_bs_ALBEDO_a")
                     done += step_cost(key, bset, gs)
+        yield from native_fixes()
         if 'BENT_NORMAL' in order:
             yield "{}: Bent Normal (light probes)".format(bset.name), done
             images['_bent'] = cycles_bake.bake_bent_probes(tb, "_bs_bent")
@@ -152,7 +173,7 @@ def bake_set_steps(context, bset, gs):
                 done += step_cost(key, bset, gs)
         for key in wanted:
             yield "{}: saving {}".format(bset.name, MAP_INFO[key]['label']), done
-            paths.append(_save(images[key], key, bset.name, folder))
+            paths.append(_save(images[key], key, prefix(bset), folder))
             done += step_cost('SAVE', bset, gs)
     return paths
 
