@@ -88,6 +88,6 @@ B1–B2 (0.2.0–0.3.0):
 - [x] B5: lupa de Scene en el panel Object y "Add missing props"; Validate avisa de una prop mal escrita.
 - [x] B4 (0.5.0): en la sala de guardado (`catedral_05`) las dos antorchas son instancias de `levels/catedral/_kit/bridge_assets/Antorcha.tscn` y alumbran.
 - [x] B4: crear un asset propio (colección + Collection Instance), exportar, Rebuild: aparece; cambiarlo en Blender (mover una pieza o la luz), exportar, Rebuild: cambian todas las copias.
-- [ ] B4: un muro con Geometry Nodes (Collection Info) y opción "Scenes": el muro llega como geometría y cada antorcha como instancia.
+- [x] B4: un muro con Geometry Nodes (Collection Info) y opción "Scenes": el muro llega como geometría y cada antorcha como instancia.
 - [x] B4: el botón "Export asset" del panel Object (con una instancia seleccionada).
 - [x] Modo de colores de vértice (0.3.0): un objeto en "Albedo" se ve con sus colores en Godot (material `<material>_vertex_color`); uno en "Datos" (por defecto) conserva su material sin teñir.
