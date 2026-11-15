@@ -83,11 +83,11 @@ B1–B2 (0.2.0–0.3.0):
 - [x] Tras Rebuild la pestaña de la escena queda marcada como modificada (asterisco).
 - [x] Duplicados con Alt+D: en Godot sus `MeshInstance3D` muestran el mismo recurso Mesh.
 - [x] B3 (0.4.0): un scatter de Geometry Nodes aparece en Godot como MultiMesh, sin la geometría guía del objeto; con "Realizar" sale como nodos estáticos.
-- [ ] B5 (0.6.0): en Godot, Project → Tools → Level Bridge: Export catalog escribe `bridge_catalog.json`.
-- [ ] B5: en Blender, panel Catalog → Place entity → `enemies/placeholder_enemy`: aparece en el cursor con su caja dibujada y sus props; exportar y Rebuild: el enemigo está donde se colocó con esas props.
-- [ ] B5: lupa de Scene en el panel Object y "Add missing props"; Validate avisa de una prop mal escrita.
-- [ ] B4 (0.5.0): en la sala de guardado (`catedral_05`) las dos antorchas son instancias de `levels/catedral/_kit/bridge_assets/Antorcha.tscn` y alumbran.
-- [ ] B4: crear un asset propio (colección + Collection Instance), exportar, Rebuild: aparece; cambiarlo en Blender (mover una pieza o la luz), exportar, Rebuild: cambian todas las copias.
+- [x] B5 (0.6.0): en Godot, Project → Tools → Level Bridge: Export catalog escribe `bridge_catalog.json`.
+- [x] B5: en Blender, panel Catalog → Place entity → `enemies/placeholder_enemy`: aparece en el cursor con su caja dibujada y sus props; exportar y Rebuild: el enemigo está donde se colocó con esas props.
+- [x] B5: lupa de Scene en el panel Object y "Add missing props"; Validate avisa de una prop mal escrita.
+- [x] B4 (0.5.0): en la sala de guardado (`catedral_05`) las dos antorchas son instancias de `levels/catedral/_kit/bridge_assets/Antorcha.tscn` y alumbran.
+- [x] B4: crear un asset propio (colección + Collection Instance), exportar, Rebuild: aparece; cambiarlo en Blender (mover una pieza o la luz), exportar, Rebuild: cambian todas las copias.
 - [ ] B4: un muro con Geometry Nodes (Collection Info) y opción "Scenes": el muro llega como geometría y cada antorcha como instancia.
-- [ ] B4: el botón "Export asset" del panel Object (con una instancia seleccionada).
+- [x] B4: el botón "Export asset" del panel Object (con una instancia seleccionada).
 - [x] Modo de colores de vértice (0.3.0): un objeto en "Albedo" se ve con sus colores en Godot (material `<material>_vertex_color`); uno en "Datos" (por defecto) conserva su material sin teñir.
