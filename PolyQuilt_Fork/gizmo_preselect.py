@@ -104,14 +104,32 @@ class PQ_Gizmo_Preselect( bpy.types.Gizmo):
         if PQ_GizmoGroup_Base.running_polyquilt  :
             self.DrawHighlight = None
 
+        if not self.is_drawable( context ) :
+            self.DrawHighlight = None
+            return
+
         self.draw_pinned( context )
 
-        if self.DrawHighlight != None :
-            if type(self.DrawHighlight) == list :
-                for drawHighlight in self.DrawHighlight :
-                    drawHighlight()
-            else :
-                self.DrawHighlight()
+        try :
+            if self.DrawHighlight != None :
+                if type(self.DrawHighlight) == list :
+                    for drawHighlight in self.DrawHighlight :
+                        drawHighlight()
+                else :
+                    self.DrawHighlight()
+        except ( ReferenceError , ValueError ) :
+            self.DrawHighlight = None
+
+    def is_drawable( self , context ) :
+        """False when the cached object/bmesh are gone (undo, mode switch, deletion): drawing them can crash Blender."""
+        try :
+            bmo = self.bmo
+            if bmo is None or context.mode != 'EDIT_MESH' or not bmo.bm.is_valid :
+                return False
+            obj = context.active_object
+            return obj is not None and bmo.obj == obj and obj.name in bpy.data.objects
+        except ( ReferenceError , AttributeError , ValueError ) :
+            return False
 
     def draw_pinned( self , context ) :
         """Cyan dots on the vertices that have weight in 'vertex_pinned' (vertex select mode only)."""

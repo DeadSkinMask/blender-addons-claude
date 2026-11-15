@@ -337,7 +337,26 @@ class MESH_OT_poly_quilt_base(bpy.types.Operator):
 #       gc.collect()
 
     @staticmethod
+    def can_draw(self , context) :
+        """Draw callbacks can fire after undo / mode switch / object deletion, when the stored
+        object or bmesh no longer exist; touching them there crashes Blender, so check first."""
+        try :
+            if self is None or context.mode != 'EDIT_MESH' :
+                return False
+            bmo = getattr( self , "bmo" , None )
+            if bmo is None or not bmo.bm.is_valid :
+                return False
+            obj = context.active_object
+            if obj is None or bmo.obj != obj or obj.name not in bpy.data.objects :
+                return False
+            return True
+        except ( ReferenceError , AttributeError , ValueError ) :
+            return False
+
+    @staticmethod
     def draw_callback_px(self , context , region_data):
+        if not MESH_OT_poly_quilt.can_draw( self , context ) :
+            return
         if self != None and context.region_data == region_data :
             if self.preferences.is_debug :
                 font_id = 0  # XXX, need to find out how best to get this.
@@ -355,8 +374,13 @@ class MESH_OT_poly_quilt_base(bpy.types.Operator):
 
     @staticmethod
     def draw_callback_3d(self , context , region_data):
+        if not MESH_OT_poly_quilt.can_draw( self , context ) :
+            return
         if self.currentSubTool is not None :
-            self.currentSubTool.Draw3D(context)
+            try :
+                self.currentSubTool.Draw3D(context)
+            except ( ReferenceError , ValueError ) :
+                pass
 
     @staticmethod
     def handle_reset(self,context):
