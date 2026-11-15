@@ -1,0 +1,9 @@
+schema_version = "1.0.0"
+id = "selection_to_mask"
+version = "1.0.0"
+name = "Selection to Mask"
+tagline = "Turn the Edit Mode selection into a Sculpt Mode mask"
+maintainer = "Luis Flores"
+type = "add-on"
+blender_version_min = "5.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
