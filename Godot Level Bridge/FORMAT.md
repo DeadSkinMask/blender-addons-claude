@@ -144,7 +144,7 @@ Las props de una entidad son las **propiedades personalizadas** del objeto en Bl
 | bool, int, float, string | igual | Convertido al tipo de la propiedad destino (`int`, `float`, `StringName`, `NodePath`…). |
 | array de números | array | `Vector2/3/4` o `Color` según la propiedad destino. |
 | puntero a otro objeto exportado | `{"$ref": "<uid>"}` | `NodePath` relativo al nodo de esa entidad. |
-| string `res://…` | string | Se carga si la propiedad destino es un recurso. Forma explícita: `{"$res": "res://…"}`. |
+| string `res://…` | string | Se carga si la propiedad destino es un recurso (`""` = ninguno). Forma explícita: `{"$res": "res://…"}`. |
 
 En Godot las props se asignan **antes** de que el nodo entre al árbol: su `_ready()` ya las ve. Una prop que la escena no tiene se guarda como metadata y el builder avisa.
 
@@ -196,4 +196,4 @@ Lo escribe el plugin de Godot (menú **Project → Tools → Level Bridge: Expor
 
 Tipos de `props` (los demás se omiten): `bool`, `int`, `float`, `string`, `string_name`, `node_path`, `vector2`, `vector3`, `vector4`, `color` (4 componentes), `resource` (con `class`; `default` = ruta `res://` o null). `default` = valor en la escena guardada (vectores y colores como arrays). Opcionales: `enum` (`[[nombre, valor], …]`, enteros con `@export_enum`), `hint` (`range`, `file`, `dir`, `multiline`…) y `hint_string` tal como los da Godot.
 
-En Blender: **Place entity** crea un empty con el rol (Placeholder o Area), la escena y sus props con los valores por defecto y su tipo; el visor dibuja la `aabb` de cada placeholder del catálogo (no se exporta nada de eso); **Validate** avisa de props que no son `@export` de la escena o de tipo distinto.
+En Blender: **Place entity** crea un empty con el rol (Placeholder o Area), la escena y sus props con los valores por defecto y su tipo (un `node_path` o `resource` sin valor por defecto queda como texto vacío, para rellenar: en Godot `""` es ningún recurso); el visor dibuja la `aabb` de cada placeholder del catálogo (no se exporta nada de eso); **Validate** avisa de props que no son `@export` de la escena o de tipo distinto.

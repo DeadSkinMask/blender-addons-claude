@@ -124,8 +124,8 @@ def box_edges(lo, hi):
 # --- Props ---
 
 def default_value(prop):
-    """Python value for the custom property of a catalog prop, or None to skip it
-    (a node_path or resource without a default cannot be written as a default)."""
+    """Python value for the custom property of a catalog prop, or None to skip it.
+    A node_path or resource without a default gets "" (none) so the field is there to fill."""
     kind, value = prop.get("type"), prop.get("default")
     if kind == "bool":
         return bool(value)
@@ -138,7 +138,7 @@ def default_value(prop):
     if kind in _VECTOR_SIZES:
         return [float(v) for v in (value or [0.0] * _VECTOR_SIZES[kind])]
     if kind in ("node_path", "resource"):
-        return str(value) if value else None
+        return str(value) if value else ""
     return None
 
 
@@ -160,6 +160,10 @@ def _ui_settings(prop):
                 settings["step"] = float(parts[2])
         except (ValueError, IndexError):
             pass
+    elif kind == "resource":
+        settings["description"] = "Godot {}: res://… path (empty = none)".format(prop.get("class") or "Resource")
+    elif kind == "node_path":
+        settings["description"] = "Godot NodePath: an object pointer or a path (empty = none)"
     elif prop.get("hint") in ("file", "dir"):
         settings["description"] = "Godot path ({} {})".format(prop["hint"], prop.get("hint_string", "")).strip()
     if kind == "color":

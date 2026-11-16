@@ -873,7 +873,8 @@ def t_place_entity():
         assert obj["speed"] == 1.5 and obj["health"] == 30 and obj["mode"] == 1 and obj["aggressive"] is True
         assert obj["label"] == "bat" and list(obj["offset"]) == [0.0, 1.0, 0.0]
         assert close(list(obj["tint"]), [1.0, 0.5, 0.25, 1.0])
-        assert "target" not in obj and "drop" not in obj, "no default for node_path/resource"
+        assert obj["target"] == "" and obj["drop"] == "", "node_path/resource without default: empty, to fill"
+        assert "res://" in obj.id_properties_ui("drop").as_dict()["description"]
         speed_ui = obj.id_properties_ui("speed").as_dict()
         assert speed_ui["min"] == 0.0 and speed_ui["max"] == 10.0, speed_ui
         mode_ui = obj.id_properties_ui("mode").as_dict()
