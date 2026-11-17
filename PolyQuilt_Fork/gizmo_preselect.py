@@ -63,7 +63,18 @@ class PQ_Gizmo_Preselect( bpy.types.Gizmo):
         return self.tool.pq_operator
 
     def test_select(self, context, location):
-        if self.invalid :
+        try :
+            return self._test_select( context , location )
+        except Exception :
+            # never leave the gizmo broken: drop the cached mesh wrapper, it is rebuilt on the next move
+            import traceback
+            traceback.print_exc()
+            self.bmo = None
+            self.DrawHighlight = None
+            return -1
+
+    def _test_select(self, context, location):
+        if self.invalid and self.bmo is not None :
             self.bmo.invalid = True
             self.invalid = False
 

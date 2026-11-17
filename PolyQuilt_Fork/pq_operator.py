@@ -196,9 +196,11 @@ class MESH_OT_poly_quilt_base(bpy.types.Operator):
         try :
             val = self.update( context, event)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             self.bmo.invalid = True
             Exit()
-            raise e
+            self.report({'ERROR'}, "PolyQuilt: %s (see the console)" % e )
             return {'CANCELLED'}
 
         if 'CANCELLED' in val or 'FINISHED' in val or 'RUNNING_MODAL' not in val and 'PASS_THROUGH' not in val :

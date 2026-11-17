@@ -51,6 +51,9 @@ class SubToolAutoQuad(SubToolEx) :
         if verts is not None:
             vs = [makeVert(v) for v in verts]
             vs = sorted(set(vs), key=vs.index)
+            if len(vs) < 3 :
+                # the generated points collapsed onto existing vertices (e.g. snapped to the x=0 plane)
+                return
             face = self.bmo.AddFace(vs, normal)
             if face is not None:
                 face.select_set(True)
