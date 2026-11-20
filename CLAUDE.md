@@ -71,6 +71,26 @@ cd "Ministry of Flat Bridge"
 - Packing is Blender's own (`uv.pack_islands`, edit mode, `margin_method='FRACTION'`: margin = per-island padding, so gap px = 2·margin·res, measured exact; after mode switches re-fetch UV layers, the old reference is stale). Target tile is applied by translating after packing. The % used is rasterized in `obj_exchange.coverage`. The tool deliberately varies texel density between islands (it decides automatically which parts need more or less; planes of 1 and 4 units come out 1.6× apart linearly, World Scale did not change that on that input): this is normal behaviour, not a bug.
 - 5.2 API: write UVs with `layer.uv.foreach_set('vector', flat)`; per-corner normals are `mesh.corner_normals.foreach_get('vector', …)`.
 
+## Inertial Bone
+
+Extension-format addon (UI in English, README in Spanish) that previews, while animating, the translating inertial bone used in Godot (`InertialBone3D`, repo `DeadSkinMask/inertial_bone_test`, folder `addons/inertial_bone/`). Same controls and defaults (frequency, damping ratio, mass, directional damping, gravity, master max offset × per-direction factors, progressive stiffness, tilt from offset, coupling) so values copy 1:1 to Godot. Settings live on `PoseBone.inertial`, the switch on `scene.inertial_bone.preview`.
+
+```bash
+cd "Inertial Bone"
+./run_tests.sh /opt/blender-5.2.3-linux-x64/blender   # builds ZIP, runs headless tests, writes test_log.txt
+blender --command extension validate inertial_bone
+```
+
+- Modules: `sim.py` (pure maths, mathutils only: a port of the Godot simulation), `runtime.py` (frame handler, anchor, writing `location`/rotation), `props.py`, `operators.py`, `ui.py`. New files go in the `zip` list of `build_zip.sh`; bump the version there and in the manifest.
+- Keep `sim.py` and the Godot `_simulate` in sync: a change in one goes in the other (and the Godot regression test `tests/test_steady_speed.gd`).
+- Off switch: `set_preview(False)` removes the `frame_change_post` handler, restores the captured pose (`ORIGINAL`) and clears `STATE`. A persistent `load_post` re-arms the handler only if a scene was saved with the preview on. Idle cost must stay zero; cost with two bones is ~0.16 ms/frame.
+- Character axes follow Godot (X right, Y up, Z back). For a Blender character facing -Y the right of the character is world -X: `frame_basis` builds the columns `(-x, z, y)` (`+Y` front: `(x, z, -y)`), always a proper rotation.
+- The anchor is the bone head with an identity pose basis: `parent.matrix @ parent.bone.matrix_local.inverted() @ bone.matrix_local` (`base_matrix`). The offset is written to `pb.location` through `base_matrix.to_3x3().inverted()` and the tilt as `base_rot⁻¹ · armature_space_tilt · base_rot` on the rotation property of the current `rotation_mode`. Tests `t_pose_matches_simulation_*` check the evaluated head against the simulated offset (also with a rotated armature and a bone roll).
+- Playback only simulates when the frame advances by 1..4; scrubbing, jumps and going backwards reset the masses (a mass cannot be simulated backwards). Tests use `scene.frame_set`, which fires `frame_change_post` in background mode.
+- Substep gotcha (a real bug, found in Godot first): the spring must use the anchor at the START of each substep (same snapshot as the mass position) and only the hard limit the anchor at the END; mixing them left a constant `v·h` offset at constant speed (chest out when walking forward, in when walking backwards). Test `t_constant_speed_no_drift_with_substeps`.
+- Facts verified on 5.2.3: bone selection is `PoseBone.select` (`Bone.select` no longer exists); `matrix_world` is stale after setting a transform until `view_layer.update()`; extension taglines are limited to 64 characters.
+- Panel drawing and live playback in the viewport cannot be tested headless; check manually: `N` → "Inertial" → Preview ON → play the timeline with Breast bones enabled; Preview OFF must leave the bones at rest.
+
 ## Godot MultiMesh Scatter
 
 Two files that form one pipeline and must stay in sync on the binary format. User-facing docs (setup, inspector properties, coordinate convention, troubleshooting) live in `README_Godot_MultiMesh_Scatter.md`; keep it updated when behavior changes.

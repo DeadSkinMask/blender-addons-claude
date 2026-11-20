@@ -1,0 +1,9 @@
+schema_version = "1.0.0"
+id = "inertial_bone"
+version = "1.0.0"
+name = "Inertial Bone"
+tagline = "Live preview of inertial bones for soft masses like breasts"
+maintainer = "Luis Flores"
+type = "add-on"
+blender_version_min = "5.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
