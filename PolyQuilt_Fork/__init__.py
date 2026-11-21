@@ -49,6 +49,10 @@ def register():
 
     bpy.types.VIEW3D_MT_mesh_add.append(pq_operator_add_empty_object.add_object_button)
 
+    for handlers in gizmo_preselect.release_handlers :
+        if gizmo_preselect.release_edit_data not in handlers :
+            handlers.append( gizmo_preselect.release_edit_data )
+
     for tool in PolyQuiltTools :
         bpy.utils.register_tool(tool['tool'] ,  after = tool['after'] , group = tool['group'] )
 
@@ -60,6 +64,10 @@ def unregister():
         bpy.utils.unregister_class(cls)        
 
     bpy.types.VIEW3D_MT_mesh_add.remove(pq_operator_add_empty_object.add_object_button)
+
+    for handlers in gizmo_preselect.release_handlers :
+        while gizmo_preselect.release_edit_data in handlers :
+            handlers.remove( gizmo_preselect.release_edit_data )
 
     unregister_icons()
     bpy.app.translations.unregister(__name__)

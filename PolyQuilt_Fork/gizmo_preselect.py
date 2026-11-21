@@ -366,6 +366,23 @@ class PQ_GizmoGroup_QuadPatch(PQ_GizmoGroup_Base):
     bl_idname = my_tool.bl_widget
     bl_label = "PolyQuilt QuadOatch Gizmo"
 
+def release_edit_data( *args ) :
+    """Drop every cached BMesh wrapper before Blender swaps/frees the edit mesh (undo, redo, file load).
+    A wrapper that outlives its BMesh can crash Blender when Python later deallocates it; the gizmos
+    rebuild their QMesh lazily on the next mouse move."""
+    for gizmo in list( PQ_GizmoGroup_Base.child_gizmos ) :
+        try :
+            gizmo.bmo = None
+            gizmo.pin_cache = None
+            gizmo.currentElement = ElementItem.Empty()
+            gizmo.DrawHighlight = None
+        except Exception :
+            pass
+
+release_handlers = ( bpy.app.handlers.undo_pre , bpy.app.handlers.undo_post ,
+                     bpy.app.handlers.redo_pre , bpy.app.handlers.redo_post ,
+                     bpy.app.handlers.load_pre )
+
 all_gizmos = ( PQ_Gizmo_Preselect , PQ_GizmoGroup_Preselect , PQ_GizmoGroup_Lowpoly , PQ_GizmoGroup_Knife , PQ_GizmoGroup_Delete, PQ_GizmoGroup_Extrude, PQ_GizmoGroup_EdgeLoop, PQ_GizmoGroup_LoopCut, PQ_GizmoGroup_Brush, PQ_GizmoGroup_Seam, PQ_GizmoGroup_QuadPatch )
 
 

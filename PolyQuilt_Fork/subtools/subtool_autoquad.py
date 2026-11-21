@@ -83,6 +83,16 @@ class SubToolAutoQuad(SubToolEx) :
 
     @classmethod
     def DrawHighlight( cls , gizmo , element ) :
+        # the ghost preview is recomputed on every mouse move: it must never raise
+        try :
+            return cls._DrawHighlight( gizmo , element )
+        except ( ReferenceError , ValueError , TypeError , IndexError , ZeroDivisionError , AttributeError ) :
+            import traceback
+            traceback.print_exc()
+            return lambda : None
+
+    @classmethod
+    def _DrawHighlight( cls , gizmo , element ) :
         is_x_zero = gizmo.preferences.fix_to_x_zero or gizmo.bmo.is_mirror_mode
         if element.isVert :
             verts , normal = cls.MakePolyByVert( element.element , is_x_zero)
@@ -90,6 +100,8 @@ class SubToolAutoQuad(SubToolEx) :
             verts , normal = cls.MakePolyByEdge( element.element , is_x_zero)
         elif element.isEmpty :
             verts , normal = cls.MakePolyByEmpty( gizmo.bmo , gizmo.mouse_pos )
+        else :
+            verts = None
         if verts != None :
             col = gizmo.preferences.makepoly_color        
             col = (col[0],col[1],col[2],col[3] * 0.5)            
@@ -103,6 +115,10 @@ class SubToolAutoQuad(SubToolEx) :
                     return mat @ v.co
 
             vs = [ calcVert(v) for v in verts ]
+            # degenerate / runaway points (behind the camera, snapped to infinity) would make
+            # tessellate_polygon and the GPU batch work on absurd polygons
+            if any( not all( math.isfinite( c ) and abs( c ) < 1.0e6 for c in v ) for v in vs ) :
+                vs = []
             if not vs:
                 def Dummy() :
                     pass
@@ -251,7 +267,7 @@ class SubToolAutoQuad(SubToolEx) :
     def MakePolyByVert( cls , vert , is_x_zero ) :
         edges = [ edge for edge in vert.link_edges if edge.is_boundary ]        
         if len(edges) != 2 :
-            return 
+            return None , None
         v1 = edges[0].other_vert(vert)
         v2 = edges[1].other_vert(vert)
         c = (v1.co + v2.co) / 2.0

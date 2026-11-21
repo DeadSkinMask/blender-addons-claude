@@ -147,7 +147,9 @@ class QMeshHighlight :
 
             # ビューポート変換
             coords = np.dot( coords , np.array( pj_matrix, dtype=np.float32 ).transpose() )
-            coords = coords[:,:-1] / coords[:,3:4]
+            in_front = coords[:,3] > 1e-6      # behind the camera the divide mirrors points into the viewport
+            with np.errstate( divide='ignore' , invalid='ignore' ) :
+                coords = coords[:,:-1] / coords[:,3:4]
             coords = coords * np.array(( width / 2, height / 2,1), dtype=np.float32) +  np.array(( width / 2, height / 2,0), dtype=np.float32)
             css = coords.reshape(vlen,3)
 
@@ -159,7 +161,7 @@ class QMeshHighlight :
             eds = css[self.__edgesIdx].reshape(elen,2,3)
 
             # 範囲内チェック
-            con = (coords[:,2] < 1.0) & ( coords[:,0] >= 0 ) & ( coords[:,0] <= width ) & (coords[:,1] >= 0) & (coords[:,1] <= height)
+            con = in_front & np.isfinite( coords ).all( axis = 1 ) & (coords[:,2] < 1.0) & ( coords[:,0] >= 0 ) & ( coords[:,0] <= width ) & (coords[:,1] >= 0) & (coords[:,1] <= height)
 
             # 頂点出力
             vidxs = np.where( con )
@@ -329,12 +331,24 @@ class QMeshHighlight :
             hits = hits[ np.argsort( np.linalg.norm( hits - co , axis=-1 ) ) ]
             return hits
 
+        e_d = l1 - l0
+
         def Check2( vp ) :
-            for l in epos :
-                hit = mathutils.geometry.intersect_line_line_2d( co , vp , l[0], l[1] )
-                if hit != None and (hit - Vector(vp) ).length > 0.001 :
-                    return True
-            return False
+            # does the segment co -> vp cross any boundary edge (other than at vp itself)?
+            if len(epos) == 0 :
+                return False
+            d1 = np.asarray( vp , dtype = np.float64 ) - co
+            w = l0 - co
+            denom = d1[0] * e_d[:,1] - d1[1] * e_d[:,0]
+            ok = np.abs( denom ) > 1e-12
+            denom = np.where( ok , denom , 1.0 )
+            t = ( w[:,0] * e_d[:,1] - w[:,1] * e_d[:,0] ) / denom     # position along co -> vp
+            u = ( w[:,0] * d1[1] - w[:,1] * d1[0] ) / denom           # position along the edge
+            hit = ok & ( t >= 0.0 ) & ( t <= 1.0 ) & ( u >= 0.0 ) & ( u <= 1.0 )
+            if not hit.any() :
+                return False
+            far = np.linalg.norm( co + t[:,None] * d1 - np.asarray( vp ) , axis = -1 ) > 0.001
+            return bool( ( hit & far ).any() )
 
         geom = []
         for s in st :
