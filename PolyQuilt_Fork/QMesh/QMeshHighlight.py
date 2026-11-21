@@ -66,11 +66,22 @@ class QMeshHighlight :
             self.UpdateView( bpy.context , True )
         return self.__viewPosEdgeNP , self.__viewPosEdgeIdx
 
+    def _cache_in_range( self , idx , seq ) :
+        """True if every cached index is still inside the (possibly shrunk) bmesh sequence."""
+        return idx is not None and ( len(idx) == 0 or int( np.max( idx ) ) < len( seq ) )
+
     @property
     def boundaryViewPosVerts(self):
         self.checkDirty()
         if self.__boundaryViewPosVerts is None :
-            verts = self.pqo.bm.verts            
+            bm = self.pqo.bm
+            bm.verts.ensure_lookup_table()
+            verts = bm.verts
+            if not self._cache_in_range( self.__viewPosVertsIdx , verts ) :
+                # topology changed behind our back (undo, operators): rebuild the view caches
+                self.setDirty()
+                self.UpdateView( bpy.context , True )
+                verts = bm.verts
             t = np.fromiter( [ vi for vi , vp in [ (i , verts[j]) for i,j in enumerate(self.__viewPosVertsIdx) ] if vp.is_boundary or vp.is_wire or not vp.is_manifold ] , dtype = np.int32 )
             self.__boundaryViewPosVerts = t
         return self.__boundaryViewPosVerts
@@ -79,7 +90,13 @@ class QMeshHighlight :
     def boundaryViewPosEdges(self):
         self.checkDirty()
         if self.__boundaryViewPosEdges is None  :
-            edges = self.pqo.bm.edges
+            bm = self.pqo.bm
+            bm.edges.ensure_lookup_table()
+            edges = bm.edges
+            if not self._cache_in_range( self.__viewPosEdgeIdx , edges ) :
+                self.setDirty()
+                self.UpdateView( bpy.context , True )
+                edges = bm.edges
             self.__boundaryViewPosEdges = np.fromiter( [ ei for ei , ep in [ (i , edges[j]) for i,j in enumerate(self.__viewPosEdgeIdx) ] if ep.is_boundary or ep.is_wire ] , dtype = np.int32 )
         return self.__boundaryViewPosEdges
 
@@ -268,10 +285,13 @@ class QMeshHighlight :
     def find_quad2( self , coord ) :
         co = np.array( coord , dtype = np.float32 )   
         verts = self.pqo.bm.verts
-        vpos = self.__viewPosVertsNP[ self.boundaryViewPosVerts ]
-        vids = self.__viewPosVertsIdx[ self.boundaryViewPosVerts ]
-        epos = self.__viewPosEdgeNP[ self.boundaryViewPosEdges ]
-        eids = self.__viewPosEdgeIdx[ self.boundaryViewPosEdges ]
+        # evaluate the properties first: they may rebuild the view caches
+        bverts = self.boundaryViewPosVerts
+        bedges = self.boundaryViewPosEdges
+        vpos = self.__viewPosVertsNP[ bverts ]
+        vids = self.__viewPosVertsIdx[ bverts ]
+        epos = self.__viewPosEdgeNP[ bedges ]
+        eids = self.__viewPosEdgeIdx[ bedges ]
         matrix = self.pqo.obj.matrix_world
 
         st = np.argsort( np.linalg.norm( vpos - co , axis=-1 ) )

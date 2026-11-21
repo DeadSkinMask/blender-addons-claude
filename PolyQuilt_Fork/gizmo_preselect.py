@@ -36,7 +36,6 @@ class PQ_Gizmo_Preselect( bpy.types.Gizmo):
         self.tool_table = [None,None,None,None]
         self.tool = None
         self.invalid = False
-        self.temp = bmesh.new()
         self.pin_cache = None
         self.pin_rev = -1
 
