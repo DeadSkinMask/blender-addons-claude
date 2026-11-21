@@ -80,6 +80,7 @@ class BAKESETS_PT_maps(bpy.types.Panel):
         c = self.layout.column()
         c.prop(s, "resolution")
         c.prop(s, "margin")
+        c.prop(s, "udim")
         c.prop(s, "output_name", placeholder=s.name)
         n = len(props._others(s))
         if n:

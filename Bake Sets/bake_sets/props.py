@@ -12,7 +12,7 @@ def _poll_mesh(self, obj):
 
 # Settings shared by every set that writes the same texture (same Texture Name, or same set name when
 # it is empty). The objects (low, highs, cage), the name and Clear Before Bake stay per set.
-SHARED = ('maps', 'resolution', 'margin', 'cage_extrusion', 'max_ray_distance', 'ao_distance', 'thickness_distance', 'curvature_radius', 'curvature_strength', 'cavity_radius', 'cavity_strength', 'dust_threshold', 'dust_softness', 'paint_ground', 'paint_ao_strength', 'albedo_alpha')
+SHARED = ('maps', 'resolution', 'margin', 'cage_extrusion', 'max_ray_distance', 'ao_distance', 'thickness_distance', 'curvature_radius', 'curvature_strength', 'cavity_radius', 'cavity_strength', 'dust_threshold', 'dust_softness', 'paint_ground', 'paint_ao_strength', 'albedo_alpha', 'udim')
 _syncing = [False]
 
 
@@ -86,6 +86,10 @@ class BAKESETS_PG_set(bpy.types.PropertyGroup):
         description="Albedo gets an alpha channel: opaque on the islands and their margin, "
                     "transparent elsewhere, and the materials' own Principled Alpha "
                     "(e.g. a texture with transparent pixels) is baked into it")
+    udim: BoolProperty(
+        name="UDIM Tiles", default=True, update=_sync_shared,
+        description="Bake every UDIM tile the low poly's UV map uses (1001, 1002, ...) into "
+                    "<texture>_<map>.<tile>.png and a UDIM image in the .blend. Off: only the 0-1 square")
     margin: IntProperty(update=_sync_shared, name="Margin", default=16, min=0, max=128, subtype='PIXEL',
                         description="Padding around UV islands, in pixels")
     cage_extrusion: FloatProperty(update=_sync_shared, name="Extrusion", default=0.1, min=0.0, subtype='DISTANCE',

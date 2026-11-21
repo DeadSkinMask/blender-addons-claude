@@ -149,7 +149,7 @@ class BAKESETS_OT_bake(bpy.types.Operator):
         if not self._validate(context, sets):
             return {'CANCELLED'}
         gs = _gs(context)
-        self._jobs = [(s, pipeline.total_cost(s, gs)) for s in sets]
+        self._jobs = [(s, pipeline.total_cost(s, gs, len(pipeline.tiles_of(context, s)))) for s in sets]
         self._grand = sum(c for _, c in self._jobs)
         self._base = 0.0          # cost of the finished sets
         self._index = 0

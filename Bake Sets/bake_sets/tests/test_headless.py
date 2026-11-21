@@ -677,6 +677,130 @@ def t_texture_name_shares_settings():
     gs.sets.clear()
 
 
+def _udim_low(name, x, shift_right=True, all_to=None):
+    """UV sphere whose faces with u > 0.5 move to tile 1002 (all_to=N moves everything to tile N)."""
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8, location=(x, 0, 0))
+    o = bpy.context.active_object
+    o.name = name
+    bpy.ops.object.shade_smooth()
+    me = o.data
+    uv = me.uv_layers.active.uv
+    arr = [0.0] * (2 * len(uv))
+    uv.foreach_get('vector', arr)
+    for poly in me.polygons:
+        loops = list(poly.loop_indices)
+        cu = sum(arr[2 * i] for i in loops) / len(loops)
+        for i in loops:
+            if all_to is not None:
+                arr[2 * i] += (all_to - 1001) % 10
+                arr[2 * i + 1] += (all_to - 1001) // 10
+            elif shift_right and cu > 0.5:
+                arr[2 * i] += 1.0
+    uv.foreach_set('vector', arr)
+    return o
+
+
+def _udim_set(low, hi, name, folder, maps):
+    gs = bpy.context.scene.bake_sets
+    gs.sets.clear()
+    gs.device = 'CPU'
+    gs.output_dir = folder
+    st = gs.sets.add()
+    gs.active = 0
+    st.name = name
+    st.low = low
+    st.highs.add().obj = hi
+    st.maps = maps
+    st.resolution = str(RES)
+    st.margin = 8
+    return st
+
+
+def t_udim_tiles():
+    """UVs in two UDIM tiles: every tile is baked (Cycles and GPU maps) into <texture>_<map>.<tile>.png and
+    registered as one UDIM image; the progress accounts for every tile."""
+    low = _udim_low("udLow", 100)
+    hi = _high_sphere("udHigh", 100, (1, 1, 1, 1)) if "_high_sphere" in globals() else None
+    if hi is None:
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24, radius=1.02, location=(100, 0, 0))
+        hi = bpy.context.active_object
+        hi.name = "udHigh"
+        bpy.ops.object.shade_smooth()
+        hi.data.materials.append(_mat("ud_m", (1, 1, 1, 1), 1.0, 0.4))
+    folder = os.path.join(OUT, "udim")
+    st = _udim_set(low, hi, "ud", folder, {'ALBEDO', 'DUST'})
+    pipeline = sys.modules[modname + ".pipeline"]
+    assert pipeline.tiles_of(bpy.context, st) == [1001, 1002]
+    gs = bpy.context.scene.bake_sets
+    assert bpy.ops.bakesets.bake() == {'FINISHED'}
+    assert sorted(os.listdir(folder)) == ["ud_albedo.1001.png", "ud_albedo.1002.png",
+                                          "ud_dust.1001.png", "ud_dust.1002.png"], os.listdir(folder)
+
+    def read(name):
+        img = bpy.data.images.load(os.path.join(folder, name), check_existing=False)
+        px_ = img.pixels[:]
+        bpy.data.images.remove(img)
+        return px_
+
+    white = lambda c: min(c) > 0.9
+
+    def region(p, x0, x1, test):
+        return sum(1 for y in range(RES) for x in range(int(x0 * RES), int(x1 * RES))
+                   if test(p[4 * (y * RES + x):4 * (y * RES + x) + 3])) / (RES * RES / 2)
+
+    a1, a2 = read("ud_albedo.1001.png"), read("ud_albedo.1002.png")
+    print("   UDIM albedo: tile 1001 white left %.0f%% right %.0f%% | tile 1002 white left %.0f%% right %.0f%%" % (
+        100 * region(a1, 0, 0.5, white), 100 * region(a1, 0.5, 1, white),
+        100 * region(a2, 0, 0.5, white), 100 * region(a2, 0.5, 1, white)))
+    assert region(a1, 0, 0.5, white) > 0.3 and region(a1, 0.5, 1, white) < 0.08, "tile 1001 = the left half (the margin spills a little)"
+    assert region(a2, 0.5, 1, white) > 0.3 and region(a2, 0, 0.5, white) < 0.08, "tile 1002 = the right half"
+    ydust = int(RES * 0.9)
+    d1, d2 = read("ud_dust.1001.png"), read("ud_dust.1002.png")
+    dl = sum(d1[4 * (ydust * RES + x)] for x in range(0, RES // 2)) / (RES // 2)
+    dr1 = sum(d1[4 * (ydust * RES + x)] for x in range(RES // 2, RES)) / (RES // 2)
+    dr2 = sum(d2[4 * (ydust * RES + x)] for x in range(RES // 2, RES)) / (RES // 2)
+    print("   UDIM dust: 1001 left %.2f right %.2f | 1002 right %.2f" % (dl, dr1, dr2))
+    assert dl > 0.8 and dr1 < 0.1 and dr2 > 0.8, "GPU maps are drawn per tile too"
+    # one UDIM image datablock per map, reading the tile files
+    img = bpy.data.images["ud_albedo"]
+    assert img.source == 'TILED' and [t.number for t in img.tiles] == [1001, 1002], [t.number for t in img.tiles]
+    assert "<UDIM>" in img.filepath
+    assert [t.number for t in bpy.data.images["ud_dust"].tiles] == [1001, 1002]
+    # progress: monotone, and the cost covers both tiles
+    gen = pipeline.bake_set_steps(bpy.context, st, gs)
+    costs = []
+    try:
+        while True:
+            costs.append(next(gen)[1])
+    except StopIteration:
+        pass
+    assert costs == sorted(costs)
+    assert abs(costs[-1] + pipeline.step_cost('SAVE', st, gs) - pipeline.total_cost(st, gs, 2)) < 1e-6
+    # UDIM off: back to the 0-1 square only (tile 1001), a plain image
+    st.udim = False
+    assert pipeline.tiles_of(bpy.context, st) == [1001]
+    assert bpy.ops.bakesets.bake() == {'FINISHED'}
+    assert os.path.exists(os.path.join(folder, "ud_albedo.png"))
+    assert bpy.data.images["ud_albedo"].source == 'FILE'
+    assert not [i.name for i in bpy.data.images if i.name.startswith("_bs_")]
+    assert not [sc for sc in bpy.data.scenes if sc.name.startswith("_bakesets")]
+    # a low poly living ONLY in tile 1003: one file with that number, a UDIM image with only that tile
+    bpy.data.objects.remove(low)
+    low3 = _udim_low("udLow3", 100, all_to=1003)
+    st = _udim_set(low3, hi, "ud3", os.path.join(OUT, "udim3"), {'ALBEDO'})
+    assert pipeline.tiles_of(bpy.context, st) == [1003]
+    assert bpy.ops.bakesets.bake() == {'FINISHED'}
+    assert os.listdir(os.path.join(OUT, "udim3")) == ["ud3_albedo.1003.png"]
+    assert [t.number for t in bpy.data.images["ud3_albedo"].tiles] == [1003]
+    a3 = bpy.data.images.load(os.path.join(OUT, "udim3", "ud3_albedo.1003.png"), check_existing=False).pixels[:]
+    assert sum(1 for i in range(RES * RES) if min(a3[4 * i:4 * i + 3]) > 0.9) > 0.3 * RES * RES, \
+        "the UV of tile 1003 was moved back to 0-1 and baked"
+    # the user's mesh was not touched: still one UV layer and the same data
+    assert len(low3.data.uv_layers) == 1
+    for o in (low3, hi):
+        bpy.data.objects.remove(o)
+
+
 def t_unregister():
     r = bpy.ops.preferences.addon_disable(module=modname)
     assert r == {'FINISHED'}, r
@@ -711,6 +835,7 @@ for name, fn in [
     ("self bake with a transparent material: neutral normal", t_self_bake_with_transparent_material),
     ("clear vs overwrite: separate elements into one texture", t_clear_vs_overwrite),
     ("sets with the same Texture Name share their settings", t_texture_name_shares_settings),
+    ("UDIM: every tile used by the UV map is baked", t_udim_tiles),
     ("unregister leaves nothing", t_unregister),
 ]:
     check(name, fn)

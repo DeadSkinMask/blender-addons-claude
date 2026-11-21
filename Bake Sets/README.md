@@ -44,6 +44,16 @@ Bent normal en Godot: asígnalo en `StandardMaterial3D` → Bent Normal (la mall
 
 Cada set escribe `<set>_<mapa>.png`. El campo **Texture Name** (en Maps; vacío = nombre del set, que se pone solo con el del objeto) cambia ese prefijo: dos o más sets con el mismo Texture Name escriben **las mismas texturas**, así puedes ir horneando un low poly a la vez en la misma imagen (con Clear Before Bake desactivado en los siguientes). Los sets que comparten textura **comparten también su configuración de bake** (mapas, resolución, margen y los ajustes de cada mapa, Transparent Background incluido): cambiar uno cambia el resto, y al darle a un set un Texture Name que ya existe adopta la configuración de ese grupo; el panel avisa con «Shares the texture and these settings with N other set(s)». Lo propio de cada set (low poly, high poly, cage, nombre) y **Clear Before Bake** no se comparten, porque normalmente el primero limpia y los demás no. Renombrar un set no lo une a un grupo: hay que escribir el Texture Name.
 
+## UDIM
+
+Con **UDIM Tiles** activado (por defecto) el addon mira en qué tiles (1001, 1002, 1003…) están las caras de la UV activa del low poly y **hornea cada tile usado**. Antes solo se horneaba el cuadrado 0-1 (tile 1001) y el resto de la UV se perdía. Cada tile se guarda como `<textura>_<mapa>.<tile>.png` (p. ej. `casco_albedo.1001.png`, `casco_albedo.1002.png`) y en el .blend se crea **una imagen UDIM** `<textura>_<mapa>` que lee esos archivos, lista para un nodo Image Texture. Si toda la UV está en el 1001 todo funciona como antes (un PNG sin número y una imagen normal). Con la casilla apagada solo se hornea el 1001.
+
+- Cada tile es un bake completo (todos los mapas, también los de GPU), así que el tiempo y la barra de progreso escalan con el número de tiles; el panel muestra «(UDIM 1002)» en cada paso.
+- El tile de una cara se decide por el centro de la cara: una isla que cruce el borde entre tiles sale cortada. Las caras fuera del rango UDIM (u o v negativos, u ≥ 10) no se pueden hornear.
+- Se hornea en una UV temporal desplazada de vuelta a 0-1; tu UV y los materiales de origen (texturas, normal maps) no se tocan. Las texturas de origen que sean UDIM en un bake sin high poly funcionan porque el material sigue leyendo la UV de render original.
+- Combinado con Clear Before Bake desactivado, cada tile conserva su archivo anterior.
+- Las propiedades de bake compartidas entre sets con el mismo Texture Name incluyen esta casilla.
+
 ## UV y normal maps en espacio tangente
 
 El bake usa la **UV activa** (la resaltada) del low poly; el panel muestra su nombre cuando eliges Tangent Normal o Bent Normal. Un normal map tangente solo se ve bien si se decodifica con las tangentes de **esa misma UV**: en el nodo **Normal Map** escribe su nombre en el campo "UV Map" (o marca esa UV como UV de render, el icono de cámara). El nodo UV Map que alimenta la imagen NO basta: solo decide de dónde se leen los píxeles. Si el campo queda vacío con otra UV de render, aparecen parches rectangulares con el sombreado cambiado en las islas giradas. Albedo, ORM y los demás mapas no tienen este problema porque solo leen por coordenada UV.
@@ -79,4 +89,5 @@ blender --command extension validate bake_sets
 - [ ] Las opciones por mapa se muestran solo cuando el mapa está marcado.
 - [ ] Hornear con GPU como dispositivo en tu máquina (los tests usan CPU).
 - [ ] Durante el bake la barra de estado muestra mapa, % y tiempo restante; Esc cancela.
+- [ ] Una UV repartida en 1001 y 1002 genera `…1001.png` y `…1002.png` y una imagen UDIM en el .blend.
 - [ ] Los sets se guardan y recuperan con el .blend.

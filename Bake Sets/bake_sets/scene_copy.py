@@ -16,8 +16,9 @@ def id_color(index):
 
 
 class TempBake:
-    def __init__(self, context, bset, gs):
+    def __init__(self, context, bset, gs, tile=1001):
         self.context, self.bset, self.gs = context, bset, gs
+        self.tile = tile
         self.scene = self.view_layer = self.world = None
         self.low = self.cage = None
         self.sources = []          # object copies the maps are projected from
@@ -39,6 +40,8 @@ class TempBake:
         self.view_layer = self.scene.view_layers[0]
         b = self.bset
         self.low = self._copy(b.low, "_bs_low", own_data=True)
+        if self.tile != 1001:
+            self._shift_uv_to_first_tile(self.low)
         highs = [h.obj for h in b.highs if h.obj and h.obj != b.low]
         self.projected = bool(highs)
         if highs:
@@ -85,6 +88,21 @@ class TempBake:
         self.scene.collection.objects.link(o)
         self._objs.append(o)
         return o
+
+    def _shift_uv_to_first_tile(self, o):
+        """UDIM: bake tile N by moving its islands back into 0-1 on a temporary UV layer. Only the
+        highlighted layer decides where Cycles (and the GPU passes) write; the render UV that the
+        materials read stays untouched, so textures are sampled where they always were."""
+        me = o.data
+        du, dv = (self.tile - 1001) % 10, (self.tile - 1001) // 10
+        layer = me.uv_layers.new(name="_bs_tile")      # starts as a copy of the active layer
+        arr = [0.0] * (2 * len(layer.uv))
+        layer.uv.foreach_get('vector', arr)
+        for i in range(0, len(arr), 2):
+            arr[i] -= du
+            arr[i + 1] -= dv
+        layer.uv.foreach_set('vector', arr)
+        me.uv_layers.active = layer
 
     def _own_materials(self, o):
         if len(o.material_slots) == 0:
