@@ -16,6 +16,7 @@ from bpy.utils.toolsystem import ToolDef
 from .pq_operator import *
 from .pq_operator_add_empty_object import *
 from .pq_icon import *
+from . import pq_autosave
 from .subtools.subtool_brush_pin import MESH_OT_pq_pin_selected
 from .pq_tool import PolyQuiltTools
 from .pq_tool_ui import VIEW3D_PT_tools_polyquilt_options
@@ -49,6 +50,8 @@ def register():
 
     bpy.types.VIEW3D_MT_mesh_add.append(pq_operator_add_empty_object.add_object_button)
 
+    pq_autosave.register()
+
     for handlers in gizmo_preselect.release_handlers :
         if gizmo_preselect.release_edit_data not in handlers :
             handlers.append( gizmo_preselect.release_edit_data )
@@ -64,6 +67,8 @@ def unregister():
         bpy.utils.unregister_class(cls)        
 
     bpy.types.VIEW3D_MT_mesh_add.remove(pq_operator_add_empty_object.add_object_button)
+
+    pq_autosave.unregister()
 
     for handlers in gizmo_preselect.release_handlers :
         while gizmo_preselect.release_edit_data in handlers :

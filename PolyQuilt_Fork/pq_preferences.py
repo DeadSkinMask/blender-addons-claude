@@ -55,6 +55,14 @@ class PolyQuiltPreferences(AddonPreferences):
         subtype='COLOR'
     )
 
+    backup_autosave : BoolProperty(
+        name="Backup Autosave",
+        description="Blender postpones its own autosave while PolyQuilt's background operator is running. "
+                    "Write a separate safety copy to the temporary folder at the same interval instead "
+                    "(never overwrites the current file)",
+        default=True,
+    )
+
     show_pinned : BoolProperty(
         name="Show Pinned Vertices",
         description="Draw the vertices of the 'vertex_pinned' group in vertex select mode",
@@ -288,6 +296,8 @@ class PolyQuiltPreferences(AddonPreferences):
         sub = row.row()
         sub.active = self.show_pinned
         sub.prop(self, "pinned_color" , text = "")
+
+        layout.prop( self, "backup_autosave" , text = "Backup Autosave while PolyQuilt is active" )
 
         layout.prop( self, "keymap_setting_expanded", text="Keymap setting",
             icon='TRIA_DOWN' if self.keymap_setting_expanded else 'TRIA_RIGHT')
