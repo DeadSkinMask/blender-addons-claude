@@ -475,18 +475,29 @@ class MESH_OT_poly_quilt_daemon(bpy.types.Operator):
 
         # 自分を使っているツールを探す。
         if context.mode != 'EDIT_MESH' or not any( [ "mesh_tool.poly_quilt" in tool.idname for tool in context.workspace.tools ] ) :
-            MESH_OT_poly_quilt_daemon.is_running = False
-            QSnap.remove_ref()
+            MESH_OT_poly_quilt_daemon.shutdown()
             context.window.cursor_set( 'DEFAULT' )
-            bpy.app.handlers.depsgraph_update_post.remove( MESH_OT_poly_quilt_daemon.depsgraph_update_post_handler )
-            bpy.app.handlers.depsgraph_update_pre.remove( MESH_OT_poly_quilt_daemon.depsgraph_update_pre_handler )
-#           gc.collect()
             return {'CANCELLED'}
 
         if PQ_GizmoGroup_Base.recive_event( context, event ) :
             context.area.tag_redraw()
             return {'RUNNING_MODAL'}
         return {'PASS_THROUGH'}
+
+    @staticmethod
+    def shutdown() :
+        """Idempotent teardown, also used when Blender removes the modal handler itself (file load, undo)."""
+        if not MESH_OT_poly_quilt_daemon.is_running :
+            return
+        MESH_OT_poly_quilt_daemon.is_running = False
+        QSnap.remove_ref()
+        for handlers , func in ( ( bpy.app.handlers.depsgraph_update_post , MESH_OT_poly_quilt_daemon.depsgraph_update_post_handler ) ,
+                                 ( bpy.app.handlers.depsgraph_update_pre , MESH_OT_poly_quilt_daemon.depsgraph_update_pre_handler ) ) :
+            while func in handlers :
+                handlers.remove( func )
+
+    def cancel(self, context):
+        MESH_OT_poly_quilt_daemon.shutdown()
 
     def invoke(self, context, event):
         if MESH_OT_poly_quilt_daemon.is_running :
