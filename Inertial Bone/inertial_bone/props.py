@@ -61,6 +61,10 @@ class InertialBoneSettings(PropertyGroup):
     progressive: FloatProperty(
         name="Progressive", default=3.0, min=0.0, max=20.0,
         description="0 = linear spring; higher stiffens it near the limit")
+    limit_bounce: FloatProperty(
+        name="Limit Bounce", default=0.0, min=0.0, max=1.0,
+        description="Bounce when the mass reaches a limit: 0 = it stops there, 1 = it bounces back with all "
+                    "its speed. Shows on hard stops (hitting a wall, landing), where the mass hits the limit at once")
 
     # Tilt from offset
     tilt_from_z: FloatProperty(

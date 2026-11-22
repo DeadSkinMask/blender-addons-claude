@@ -21,7 +21,7 @@ def settings(**kw):
     """A stand-in for InertialBoneSettings with the Godot defaults."""
     d = dict(frequency=(2, 2, 2), damping_ratio=0.3, mass=1.0, damping_pos=(1, 1, 1), damping_neg=(1, 1, 1),
              gravity=(0, 0, -7), max_offset=0.06, max_factor_pos=(1, 1, 1), max_factor_neg=(1, 1, 1),
-             progressive=3.0, coupling=20.0, gravity_compensation=0.0)
+             progressive=3.0, coupling=20.0, gravity_compensation=0.0, limit_bounce=0.0)
     d.update(kw)
     return types.SimpleNamespace(**d)
 
@@ -206,6 +206,47 @@ def t_asymmetric_limits_and_master():
         sim.step(s, DT, Vector((0, -3.0 * math.sin(i * DT * 6.0), 0)), B_NEG_Y)
         peak_front = max(peak_front, -(B_NEG_Y.transposed() @ sim.offset_world).z)
     assert peak_front <= 0.03 + 1e-4, peak_front
+
+
+def t_limit_bounce_rebounds_after_a_hard_stop():
+    """Same scenario as Godot's tests/test_limit_bounce.gd (slide at 8 m/s, then a wall): with 0 the mass
+    stops at the front limit, with bounce it comes back further, and it never passes a limit. The rebound
+    must match Godot's numbers (3.70 / 4.70 / 6.00 cm): both ports share one simulation."""
+    m = mod("sim")
+    bt = B_NEG_Y.transposed()
+    rebound = {}
+    for bounce in (0.0, 0.6, 1.0):
+        s = settings(gravity=(0, 0, 0), limit_bounce=bounce)
+        sim = m.Sim()
+        y = 0.0
+        sim.step(s, DT, Vector((0, y, 0)), B_NEG_Y)     # init at rest
+        for _ in range(90):                              # forward (-Y) at 8 m/s
+            y -= 8.0 * DT
+            sim.step(s, DT, Vector((0, y, 0)), B_NEG_Y)
+        front = back = 0.0
+        for _ in range(60):                              # wall: stopped dead
+            sim.step(s, DT, Vector((0, y, 0)), B_NEG_Y)
+            z = (bt @ sim.offset_world).z                # character Z: + back, - front
+            front, back = min(front, z), max(back, z)
+            assert -0.06 - 1e-6 <= z <= 0.06 + 1e-6, (bounce, z)
+        assert front <= -0.9 * 0.06, (bounce, front)
+        rebound[bounce] = back
+    assert rebound[0.6] > rebound[0.0] + 0.005 and rebound[1.0] > rebound[0.6], rebound
+    for bounce, godot in ((0.0, 0.0370), (0.6, 0.0470), (1.0, 0.0600)):
+        assert abs(rebound[bounce] - godot) < 0.002, (bounce, rebound[bounce], godot)
+
+
+def t_limit_bounce_zero_is_the_old_hard_stop():
+    """With limit_bounce = 0 every velocity component that reaches the limit is zeroed, as before 1.2.0."""
+    m = mod("sim")
+    s = settings(gravity=(0, 0, 0))
+    sim = m.Sim()
+    sim.step(s, DT, Vector(), B_NEG_Y)
+    sim.pos = Vector((0, 0.2, 0))                        # far behind the back limit
+    sim.vel = Vector((0, 3.0, 0))                        # and still moving out
+    sim.step(s, 1 / 120, Vector(), B_NEG_Y)              # one substep: clamped, velocity zeroed
+    assert abs((B_NEG_Y.transposed() @ sim.offset_world).z - 0.06) < 1e-6, sim.offset_world
+    assert abs(sim.vel.y) < 1e-6, sim.vel
 
 
 def t_coupling_pulls_offsets_together():
@@ -473,6 +514,7 @@ tests = [t_registered, t_gravity_sag_matches_analytic, t_gravity_compensation_is
          t_static_sag_linear_case_matches_analytic, t_gravity_compensation_keeps_motion_identical,
          t_gravity_compensation_written_to_pose, t_constant_speed_leaves_no_offset,
          t_constant_speed_no_drift_with_substeps, t_forward_acceleration_lags_toward_back, t_asymmetric_limits_and_master,
+         t_limit_bounce_rebounds_after_a_hard_stop, t_limit_bounce_zero_is_the_old_hard_stop,
          t_coupling_pulls_offsets_together, t_teleport_resets,
          t_pose_matches_simulation_plain, t_pose_matches_simulation_rotated_armature,
          t_forward_motion_pushes_bone_back_in_world, t_tilt_is_written_and_capped,

@@ -56,6 +56,7 @@ class Sim:
         lim_neg = [max(f * mo, 1e-5) for f in s.max_factor_neg]
         dpos, dneg = s.damping_pos, s.damping_neg
         prog, coupling = s.progressive, s.coupling
+        bounce = s.limit_bounce
         gravity = Vector(s.gravity)
 
         for i in range(n):
@@ -84,7 +85,8 @@ class Sim:
             self.vel = av + b @ vl
             self.pos += self.vel * h
 
-            # hard limit per axis and side (zeroes the velocity component that hits it)
+            # hard limit per axis and side: the velocity component going out bounces back scaled by
+            # limit_bounce (0 = it stops at the limit, the original behaviour)
             off = bt @ (self.pos - a_end)
             cl = Vector(off)
             for ax in range(3):
@@ -94,7 +96,10 @@ class Sim:
                 vl = bt @ (self.vel - av)
                 for ax in range(3):
                     if cl[ax] != off[ax]:
-                        vl[ax] = 0.0
+                        if (off[ax] - cl[ax]) * vl[ax] > 0.0:
+                            vl[ax] *= -bounce
+                        elif bounce == 0.0:
+                            vl[ax] = 0.0
                 self.vel = av + b @ vl
 
         self.prev_anchor = anchor.copy()

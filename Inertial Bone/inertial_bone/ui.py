@@ -103,6 +103,7 @@ class INERTIALBONE_PT_limits(_BonePanel):
         layout.prop(s, "max_factor_pos")
         layout.prop(s, "max_factor_neg")
         layout.prop(s, "progressive")
+        layout.prop(s, "limit_bounce")
 
 
 class INERTIALBONE_PT_tilt(_BonePanel):

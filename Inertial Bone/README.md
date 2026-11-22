@@ -9,11 +9,11 @@ con inercia al movimiento del personaje en el espacio global (pensado para pecho
 
 ```bash
 ./run_tests.sh /opt/blender-5.2.3-linux-x64/blender   # construye el ZIP y corre los tests headless (test_log.txt)
-./build_zip.sh                                        # solo reconstruye inertial_bone-1.1.1.zip
+./build_zip.sh                                        # solo reconstruye inertial_bone-1.2.0.zip
 blender --command extension validate inertial_bone
 ```
 
-Instalar: *Edit > Preferences > Get Extensions > ▼ > Install from Disk…* y elegir `inertial_bone-1.1.1.zip`.
+Instalar: *Edit > Preferences > Get Extensions > ▼ > Install from Disk…* y elegir `inertial_bone-1.2.0.zip`.
 
 ## Uso
 
@@ -37,6 +37,7 @@ Instalar: *Edit > Preferences > Get Extensions > ▼ > Install from Disk…* y e
 | Max Offset | Offset máximo **maestro** (metros). |
 | Factor + / Factor - | Límite de cada dirección = maestro × factor. |
 | Progressive | Endurece el muelle cerca del límite. |
+| Limit Bounce | Rebote al llegar al tope: 0 = se detiene en el límite, 1 = rebota con toda la velocidad. Se nota en frenazos bruscos (chocar con un muro, aterrizar). Igual que `limit_bounce` en Godot. |
 | Tilt From Offset | Giro leve (°/cm) según el offset, con tope `Max Tilt`. |
 | Coupled With / Coupling | Acopla el hueso con otro del mismo armature. |
 | Axes Reference / Character Front | Objeto cuyos ejes definen X/Y/Z, y hacia dónde mira (-Y en Blender por defecto). |
