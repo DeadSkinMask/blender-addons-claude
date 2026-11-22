@@ -57,13 +57,6 @@ class Sim:
         dpos, dneg = s.damping_pos, s.damping_neg
         prog, coupling = s.progressive, s.coupling
         gravity = Vector(s.gravity)
-        # spring centre shifted against gravity: at rest k*center = -m*g_local cancels the static sag
-        # (sag = m*g/omega^2), so the mass rests exactly at the modelled pose when compensation = 1
-        comp = s.gravity_compensation
-        center = [0.0, 0.0, 0.0]
-        if comp != 0.0:
-            gl = bt @ gravity
-            center = [-comp * m * gl[ax] / max(k[ax], 1e-6) for ax in range(3)]
 
         for i in range(n):
             # forces use the anchor at the START of the substep (same snapshot as self.pos); the hard
@@ -77,7 +70,7 @@ class Sim:
             for ax in range(3):
                 lim = lim_pos[ax] if off[ax] >= 0.0 else lim_neg[ax]
                 r = abs(off[ax]) / lim
-                f_local[ax] = -k[ax] * (1.0 + prog * r * r) * (off[ax] - center[ax])
+                f_local[ax] = -k[ax] * (1.0 + prog * r * r) * off[ax]
             if partner_off is not None:
                 f_local += (bt @ (partner_off - (self.pos - a))) * coupling
 
@@ -107,3 +100,40 @@ class Sim:
         self.prev_anchor = anchor.copy()
         self.offset_world = self.pos - anchor
         return self.offset_world
+
+
+def static_sag_local(s, bt):
+    """Static equilibrium of the mass under gravity, in character axes (the offset it falls to).
+
+    Per axis it solves k*(1 + prog*r^2)*|x| = m*|g| with r = |x| / limit of the side it falls toward,
+    capped at that limit: the real sag of the simulation, not the linear m*g/omega^2 approximation."""
+    m = max(s.mass, 0.001)
+    gl = bt @ Vector(s.gravity)
+    mo = s.max_offset
+    out = Vector()
+    for ax in range(3):
+        k = max((s.frequency[ax] * math.tau) ** 2, 1e-6)
+        side = 1.0 if gl[ax] >= 0.0 else -1.0
+        lim = max((s.max_factor_pos[ax] if side > 0.0 else s.max_factor_neg[ax]) * mo, 1e-5)
+        f = m * abs(gl[ax])
+        if k * lim * (1.0 + s.progressive) <= f:
+            out[ax] = side * lim                 # gravity beats the spring: it rests on the limit
+            continue
+        lo, hi = 0.0, lim
+        for _ in range(40):                      # k*x*(1 + p*(x/lim)^2) is increasing: bisection
+            x = 0.5 * (lo + hi)
+            r = x / lim
+            if k * x * (1.0 + s.progressive * r * r) < f:
+                lo = x
+            else:
+                hi = x
+        out[ax] = side * 0.5 * (lo + hi)
+    return out
+
+
+def rest_compensation(s, b):
+    """World-space offset added when drawing the bone: it moves the bone UP by the sag, like raising the
+    vertices by hand. It is NOT a force: the simulation is untouched."""
+    if s.gravity_compensation == 0.0:
+        return Vector()
+    return b @ (static_sag_local(s, b.transposed()) * -s.gravity_compensation)

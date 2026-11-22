@@ -1,6 +1,6 @@
-schema_version = "1.1.0"
+schema_version = "1.1.1"
 id = "inertial_bone"
-version = "1.1.0"
+version = "1.1.1"
 name = "Inertial Bone"
 tagline = "Live preview of inertial bones for soft masses like breasts"
 maintainer = "Luis Flores"

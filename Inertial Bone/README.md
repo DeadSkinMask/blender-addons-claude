@@ -9,11 +9,11 @@ con inercia al movimiento del personaje en el espacio global (pensado para pecho
 
 ```bash
 ./run_tests.sh /opt/blender-5.2.3-linux-x64/blender   # construye el ZIP y corre los tests headless (test_log.txt)
-./build_zip.sh                                        # solo reconstruye inertial_bone-1.1.0.zip
+./build_zip.sh                                        # solo reconstruye inertial_bone-1.1.1.zip
 blender --command extension validate inertial_bone
 ```
 
-Instalar: *Edit > Preferences > Get Extensions > ▼ > Install from Disk…* y elegir `inertial_bone-1.1.0.zip`.
+Instalar: *Edit > Preferences > Get Extensions > ▼ > Install from Disk…* y elegir `inertial_bone-1.1.1.zip`.
 
 ## Uso
 
@@ -33,7 +33,7 @@ Instalar: *Edit > Preferences > Get Extensions > ▼ > Install from Disk…* y e
 | Mass | Frecuencia efectiva = frecuencia / √masa. |
 | Damping + / Damping - | Multiplicador de damping hacia +X/+Y/+Z y -X/-Y/-Z. |
 | Gravity | Aceleración en mundo (ejes de Blender, Z arriba). Caída estática = masa·g/ω². |
-| Gravity Compensation | 0 = el pecho cae por su peso; 1 = en reposo queda exactamente en la pose modelada (se desplaza el centro del muelle, sin mover vértices); intermedios dejan parte de la caída. No cambia la reacción al movimiento. |
+| Gravity Compensation | **Offset de reposo**, no una fuerza: sube el hueso lo que cae en reposo, como subir los vértices a mano. La simulación no cambia (misma caída, rebote y límites que sin compensación); solo cambia dónde se dibuja. 0 = apagado, 1 = en reposo queda en la pose modelada. Usa la caída real (con rigidez progresiva y límites). |
 | Max Offset | Offset máximo **maestro** (metros). |
 | Factor + / Factor - | Límite de cada dirección = maestro × factor. |
 | Progressive | Endurece el muelle cerca del límite. |

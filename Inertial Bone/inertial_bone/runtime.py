@@ -5,7 +5,7 @@ import bpy
 from bpy.app.handlers import persistent
 from mathutils import Matrix, Vector
 
-from .sim import Sim
+from .sim import Sim, rest_compensation
 
 STATE = {}      # (object name, bone name) -> Sim
 ORIGINAL = {}   # (object name, bone name) -> pose values captured before the first write
@@ -124,7 +124,9 @@ def process_scene(scene, dt):
                 off = sim.offset_world
             else:
                 off = sim.step(s, dt, anchor, b, partner)
-            _write_pose(obj, pb, s, b, off, base)
+            # drawn offset = simulated offset + rest offset (gravity compensation); the simulation itself
+            # (and the offset the coupled bone reads) never includes the compensation
+            _write_pose(obj, pb, s, b, off + rest_compensation(s, b), base)
             sims[key] = sim
     return len(sims)
 

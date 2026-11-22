@@ -84,34 +84,70 @@ def t_gravity_sag_matches_analytic():
     assert abs(sim.offset_world.x) < 1e-4 and abs(sim.offset_world.y) < 1e-4
 
 
-def t_gravity_compensation_cancels_sag():
+def t_gravity_compensation_is_a_rest_offset():
+    """Drawn offset at rest = (1 - comp) * real sag (progressive stiffness and limits included) and the
+    simulated offset does not depend on the compensation."""
     m = mod("sim")
-    omega = 2 * math.pi * 2.0
-    for mass, comp, expect in ((1.0, 0.0, 7 / omega ** 2), (2.0, 0.0, 14 / omega ** 2),
-                               (1.0, 0.5, 3.5 / omega ** 2), (1.0, 1.0, 0.0), (2.0, 1.0, 0.0)):
-        sim = m.Sim()
-        s = settings(progressive=0.0, max_offset=1.0, mass=mass, gravity_compensation=comp)
-        for _ in range(600):
-            sim.step(s, DT, Vector((1, 2, 3)), B_NEG_Y)
-        assert abs(-sim.offset_world.z - expect) < 0.002, (mass, comp, sim.offset_world.z, expect)
+    for prog in (0.0, 3.0):
+        for mass in (1.0, 2.0, 20.0):                   # 20: gravity beats the spring, rests on the limit
+            sims = []
+            for comp in (0.0, 0.5, 1.0):
+                sim = m.Sim()
+                s = settings(progressive=prog, mass=mass, gravity_compensation=comp)
+                for _ in range(600):
+                    sim.step(s, DT, Vector((1, 2, 3)), B_NEG_Y)
+                shown = sim.offset_world + m.rest_compensation(s, B_NEG_Y)
+                sag = sim.offset_world.z
+                sims.append(sag)
+                assert abs(shown.z - (1.0 - comp) * sag) < 0.001, (prog, mass, comp, sag, shown.z)
+            assert max(sims) - min(sims) < 1e-9, (prog, mass, sims)
 
 
-def t_gravity_compensation_keeps_motion_response():
-    """Compensation only moves the rest point: the reaction to an acceleration must be the same."""
+def t_static_sag_linear_case_matches_analytic():
     m = mod("sim")
-    peaks = []
+    s = settings(progressive=0.0, max_offset=1.0)
+    sag = m.static_sag_local(s, B_NEG_Y.transposed())
+    assert abs(sag.y - (-7.0 / (2 * math.pi * 2.0) ** 2)) < 1e-7, sag      # character Y = up (float32 vectors)
+
+
+def t_gravity_compensation_keeps_motion_identical():
+    """Compensation is output only: the simulated trajectory is bit-for-bit the same."""
+    m = mod("sim")
+    runs = []
     for comp in (0.0, 1.0):
         sim = m.Sim()
-        s = settings(progressive=0.0, max_offset=1.0, gravity_compensation=comp)
-        for _ in range(300):                                   # settle at rest first
+        s = settings(gravity_compensation=comp)
+        for _ in range(300):
             sim.step(s, DT, Vector(), B_NEG_Y)
-        rest = sim.offset_world.copy()
-        peak = 0.0
+        tr = []
         for i in range(60):
-            sim.step(s, DT, Vector((0, -0.5 * 8.0 * (i * DT) ** 2, 0)), B_NEG_Y)
-            peak = max(peak, (sim.offset_world - rest).y)
-        peaks.append(peak)
-    assert abs(peaks[0] - peaks[1]) < 1e-3, peaks
+            sim.step(s, DT, Vector((0, -0.5 * 8.0 * (i * DT) ** 2, 0.3 * math.sin(i * 0.2))), B_NEG_Y)
+            tr.append(sim.offset_world.copy())
+        runs.append(tr)
+    assert all((a - b).length < 1e-12 for a, b in zip(*runs))
+
+
+def t_gravity_compensation_written_to_pose():
+    rt = mod("runtime")
+    sm = mod("sim")
+    arm = make_rig()
+    animate_forward(arm)
+    s = arm.pose.bones["Breast_L"].inertial
+    s.enabled = True
+    s.gravity_compensation = 1.0
+    scn = bpy.context.scene
+    scn.frame_set(1)
+    scn.inertial_bone.preview = True
+    pb = arm.pose.bones["Breast_L"]
+    worst = 0.0
+    for f in range(2, 20):
+        scn.frame_set(f)
+        sim = rt.STATE[(arm.name, "Breast_L")]
+        b = rt.frame_basis(arm, s.front_axis)
+        expect = sim.offset_world + sm.rest_compensation(s, b)
+        worst = max(worst, (head_minus_anchor_world(arm, pb, rt) - expect).length)
+    assert worst < 1e-4, worst
+    scn.inertial_bone.preview = False
 
 
 def t_constant_speed_leaves_no_offset():
@@ -433,8 +469,9 @@ def t_unregister_cleans_up():
     addon_utils.enable(MOD, default_set=False)
 
 
-tests = [t_registered, t_gravity_sag_matches_analytic, t_gravity_compensation_cancels_sag,
-         t_gravity_compensation_keeps_motion_response, t_constant_speed_leaves_no_offset,
+tests = [t_registered, t_gravity_sag_matches_analytic, t_gravity_compensation_is_a_rest_offset,
+         t_static_sag_linear_case_matches_analytic, t_gravity_compensation_keeps_motion_identical,
+         t_gravity_compensation_written_to_pose, t_constant_speed_leaves_no_offset,
          t_constant_speed_no_drift_with_substeps, t_forward_acceleration_lags_toward_back, t_asymmetric_limits_and_master,
          t_coupling_pulls_offsets_together, t_teleport_resets,
          t_pose_matches_simulation_plain, t_pose_matches_simulation_rotated_armature,

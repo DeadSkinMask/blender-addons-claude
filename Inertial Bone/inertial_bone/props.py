@@ -44,8 +44,9 @@ class InertialBoneSettings(PropertyGroup):
 
     gravity_compensation: FloatProperty(
         name="Gravity Compensation", default=0.0, min=0.0, soft_max=1.0,
-        description="0 = the mass sags under its weight (m*g/omega^2); 1 = at rest it sits exactly at the "
-                    "modelled pose, no need to move vertices. Does not change the reaction to motion")
+        description="Rest offset: moves the bone UP by the amount it sags at rest, like raising the vertices "
+                    "by hand. Not a force: the simulation is unchanged (same sag, bounce and limits). "
+                    "0 = off, 1 = at rest the bone sits at the modelled pose")
 
     # Limits
     max_offset: FloatProperty(
