@@ -57,6 +57,13 @@ class Sim:
         dpos, dneg = s.damping_pos, s.damping_neg
         prog, coupling = s.progressive, s.coupling
         gravity = Vector(s.gravity)
+        # spring centre shifted against gravity: at rest k*center = -m*g_local cancels the static sag
+        # (sag = m*g/omega^2), so the mass rests exactly at the modelled pose when compensation = 1
+        comp = s.gravity_compensation
+        center = [0.0, 0.0, 0.0]
+        if comp != 0.0:
+            gl = bt @ gravity
+            center = [-comp * m * gl[ax] / max(k[ax], 1e-6) for ax in range(3)]
 
         for i in range(n):
             # forces use the anchor at the START of the substep (same snapshot as self.pos); the hard
@@ -70,7 +77,7 @@ class Sim:
             for ax in range(3):
                 lim = lim_pos[ax] if off[ax] >= 0.0 else lim_neg[ax]
                 r = abs(off[ax]) / lim
-                f_local[ax] = -k[ax] * (1.0 + prog * r * r) * off[ax]
+                f_local[ax] = -k[ax] * (1.0 + prog * r * r) * (off[ax] - center[ax])
             if partner_off is not None:
                 f_local += (bt @ (partner_off - (self.pos - a))) * coupling
 

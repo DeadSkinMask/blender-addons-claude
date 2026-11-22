@@ -87,6 +87,7 @@ class INERTIALBONE_PT_dynamics(_BonePanel):
         layout.prop(s, "damping_pos")
         layout.prop(s, "damping_neg")
         layout.prop(s, "gravity")
+        layout.prop(s, "gravity_compensation")
 
 
 class INERTIALBONE_PT_limits(_BonePanel):

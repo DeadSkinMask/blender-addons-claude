@@ -42,6 +42,11 @@ class InertialBoneSettings(PropertyGroup):
         name="Gravity", size=3, default=(0.0, 0.0, -7.0), subtype='ACCELERATION',
         description="World-space acceleration (Blender axes, Z up). Static sag is g / omega^2")
 
+    gravity_compensation: FloatProperty(
+        name="Gravity Compensation", default=0.0, min=0.0, soft_max=1.0,
+        description="0 = the mass sags under its weight (m*g/omega^2); 1 = at rest it sits exactly at the "
+                    "modelled pose, no need to move vertices. Does not change the reaction to motion")
+
     # Limits
     max_offset: FloatProperty(
         name="Max Offset", default=0.06, min=0.0, soft_max=0.5, subtype='DISTANCE',

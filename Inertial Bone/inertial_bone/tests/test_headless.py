@@ -21,7 +21,7 @@ def settings(**kw):
     """A stand-in for InertialBoneSettings with the Godot defaults."""
     d = dict(frequency=(2, 2, 2), damping_ratio=0.3, mass=1.0, damping_pos=(1, 1, 1), damping_neg=(1, 1, 1),
              gravity=(0, 0, -7), max_offset=0.06, max_factor_pos=(1, 1, 1), max_factor_neg=(1, 1, 1),
-             progressive=3.0, coupling=20.0)
+             progressive=3.0, coupling=20.0, gravity_compensation=0.0)
     d.update(kw)
     return types.SimpleNamespace(**d)
 
@@ -82,6 +82,36 @@ def t_gravity_sag_matches_analytic():
     expect = -7.0 / (2 * math.pi * 2.0) ** 2           # g / omega^2, downwards
     assert abs(sim.offset_world.z - expect) < 0.002, (sim.offset_world.z, expect)
     assert abs(sim.offset_world.x) < 1e-4 and abs(sim.offset_world.y) < 1e-4
+
+
+def t_gravity_compensation_cancels_sag():
+    m = mod("sim")
+    omega = 2 * math.pi * 2.0
+    for mass, comp, expect in ((1.0, 0.0, 7 / omega ** 2), (2.0, 0.0, 14 / omega ** 2),
+                               (1.0, 0.5, 3.5 / omega ** 2), (1.0, 1.0, 0.0), (2.0, 1.0, 0.0)):
+        sim = m.Sim()
+        s = settings(progressive=0.0, max_offset=1.0, mass=mass, gravity_compensation=comp)
+        for _ in range(600):
+            sim.step(s, DT, Vector((1, 2, 3)), B_NEG_Y)
+        assert abs(-sim.offset_world.z - expect) < 0.002, (mass, comp, sim.offset_world.z, expect)
+
+
+def t_gravity_compensation_keeps_motion_response():
+    """Compensation only moves the rest point: the reaction to an acceleration must be the same."""
+    m = mod("sim")
+    peaks = []
+    for comp in (0.0, 1.0):
+        sim = m.Sim()
+        s = settings(progressive=0.0, max_offset=1.0, gravity_compensation=comp)
+        for _ in range(300):                                   # settle at rest first
+            sim.step(s, DT, Vector(), B_NEG_Y)
+        rest = sim.offset_world.copy()
+        peak = 0.0
+        for i in range(60):
+            sim.step(s, DT, Vector((0, -0.5 * 8.0 * (i * DT) ** 2, 0)), B_NEG_Y)
+            peak = max(peak, (sim.offset_world - rest).y)
+        peaks.append(peak)
+    assert abs(peaks[0] - peaks[1]) < 1e-3, peaks
 
 
 def t_constant_speed_leaves_no_offset():
@@ -403,7 +433,8 @@ def t_unregister_cleans_up():
     addon_utils.enable(MOD, default_set=False)
 
 
-tests = [t_registered, t_gravity_sag_matches_analytic, t_constant_speed_leaves_no_offset,
+tests = [t_registered, t_gravity_sag_matches_analytic, t_gravity_compensation_cancels_sag,
+         t_gravity_compensation_keeps_motion_response, t_constant_speed_leaves_no_offset,
          t_constant_speed_no_drift_with_substeps, t_forward_acceleration_lags_toward_back, t_asymmetric_limits_and_master,
          t_coupling_pulls_offsets_together, t_teleport_resets,
          t_pose_matches_simulation_plain, t_pose_matches_simulation_rotated_armature,
