@@ -116,7 +116,8 @@ def extensions_dir(blender):
     out = subprocess.run(
         [blender, "-b", "--python-expr",
          "import bpy;print('PQ_EXT=' + bpy.utils.user_resource('EXTENSIONS'))"],
-        capture_output=True, text=True).stdout
+        # other add-ons print UTF-8 (box drawing...) that the Windows code page (cp1252) cannot decode
+        capture_output=True, encoding="utf-8", errors="replace").stdout or ""
     m = re.search(r"PQ_EXT=(.+)", out)
     return m.group(1).strip() if m else None
 
