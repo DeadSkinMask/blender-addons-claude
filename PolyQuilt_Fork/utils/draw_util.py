@@ -52,6 +52,7 @@ void main()
 '''
 
 def batch_draw( shader , primitiveType , content  , indices = None ) :
+    _init_shaders()
     if indices :
         batch = batch_for_shader(shader, primitiveType , content , indices=indices )
     else :
@@ -59,13 +60,22 @@ def batch_draw( shader , primitiveType , content  , indices = None ) :
     batch.draw(shader)
     return batch
 
-try :
-    shaderEx = gpu.types.GPUShader(dot_line_vertex_shader, dot_line_fragment_shader)
-except Exception as e:
-    shaderEx = gpu.shader.from_builtin('UNIFORM_COLOR')
+# Created lazily: in background mode (`blender --command ...`, tests) the GPU module is not
+# initialized and building shaders at import time makes the whole addon fail to load.
+shaderEx = None
+shader2D = None
+shader3D = None
 
-shader2D = gpu.shader.from_builtin('UNIFORM_COLOR')
-shader3D = gpu.shader.from_builtin('UNIFORM_COLOR')
+def _init_shaders() :
+    global shaderEx , shader2D , shader3D
+    if shader2D is not None :
+        return
+    try :
+        shaderEx = gpu.types.GPUShader(dot_line_vertex_shader, dot_line_fragment_shader)
+    except Exception :
+        shaderEx = gpu.shader.from_builtin('UNIFORM_COLOR')
+    shader2D = gpu.shader.from_builtin('UNIFORM_COLOR')
+    shader3D = gpu.shader.from_builtin('UNIFORM_COLOR')
 
 def draw_circle2D( pos , radius , color = (1,1,1,1), fill = False , subdivide = 64 , dpi = True, width : float = 1.0  ):
     if dpi :
@@ -101,6 +111,7 @@ def draw_donuts2D( pos , radius_out , width , rate , color = (1,1,1,1) ):
     draw_lines2D( vertices , color ,  display.dot( width )  )
 
 def draw_points2D( poss , radius , color = (1,1,1,1) ):
+    _init_shaders()
     shader2D.bind()
     shader2D.uniform_float("color", color )
     batch_draw(shader2D, 'POINTS', {"pos": poss} )
@@ -130,6 +141,7 @@ def draw_dot_lines2D(verts , color = (1,1,1,0.5) , width : float = 2.0 , pattern
     batch.draw(shader)
 
 def draw_poly2D(verts, color=(1, 1, 1, 1)):
+    _init_shaders()
     shader2D.bind()
     shader2D.uniform_float("color", color)
     batch_for_shader(shader2D, 'TRIS', {"pos": verts}).draw(shader2D)
@@ -149,6 +161,7 @@ def draw_lines3D(context, verts, color=(1, 1, 1, 1), width: float = 1.0, hide_al
 
 
 def draw_Poly3D(context, verts, color=(1, 1, 1, 1), hide_alpha=0.5):
+    _init_shaders()
     polys = mathutils.geometry.tessellate_polygon((verts,))
     shader3D.bind()
     gpu.state.blend_set("ALPHA")
@@ -164,6 +177,7 @@ def draw_pivots3D( poss , radius , color = (1,1,1,1) ):
 
 
 def draw_Face3D( obj , bm : bmesh.types.BMesh , face : bmesh.types.BMFace , color = (1,1,1,1) , isFill = True ):
+    _init_shaders()
 
     if isFill :
         vs = [ obj.matrix_world @ v.vert.co for v in face.loops ]
@@ -217,6 +231,7 @@ def drawElementHilight3D( obj , bm : bmesh.types.BMesh , element, radius ,width 
         draw_Edge3D(obj,element,color,width)
 
 def drawElementHilight3DFunc( obj  , bm : bmesh.types.BMesh , element, radius ,width , alpha, color = (1,1,1,1) ) :
+    _init_shaders()
     matrix_world = copy.copy( obj.matrix_world )
 
     if isinstance( element , bmesh.types.BMVert ) :
@@ -230,6 +245,7 @@ def drawElementHilight3DFunc( obj  , bm : bmesh.types.BMesh , element, radius ,w
         vs = [matrix_world @ v.vert.co for v in element.loops]
         polys = mathutils.geometry.tessellate_polygon((vs,))
         def draw():
+            _init_shaders()
             shader3D.bind()
             shader3D.uniform_float("color",  (color[0],color[1],color[2],color[3] * alpha) )
             gpu.state.blend_set("ALPHA")
