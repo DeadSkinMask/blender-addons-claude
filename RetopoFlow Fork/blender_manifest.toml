@@ -1,10 +1,10 @@
 schema_version = "1.0.0"
 
-id = "retopoflow"
-version = "3.4.13"
-name = "RetopoFlow 3"
-tagline = "A unified suite of retopology tools for Blender"
-maintainer = "Orange Turbine - Dr. Jon Denning, Jonathan Williamson, Jonathan Lampel, JF Matheu <orangeturbine@cgcookie.com>"
+id = "retopoflow_luis_fork"
+version = "3.4.14"
+name = "RetopoFlow Luis Fork"
+tagline = "Luis Flores fork of RetopoFlow 3 (retopology tools)"
+maintainer = "Luis Flores (fork of Orange Turbine - Dr. Jon Denning, Jonathan Williamson, Jonathan Lampel, JF Matheu)"
 # Supported types: "add-on", "theme"
 type = "add-on"
 

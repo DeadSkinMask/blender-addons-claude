@@ -8,7 +8,8 @@ extension (for RustRemesher the one matching this OS, with the engine, if there 
 compares its version with the installed one (path asked to Blender, so BLENDER_USER_EXTENSIONS
 and portable setups work).
 
-* no names:      update the extensions that are already installed; list the ones that are not
+* no names:      update the extensions that are already installed (also the ones still installed
+                 under an old id: they are migrated); list the ones that are not
 * names:         only those (match on id or name, case-insensitive substring) - installed or not
 * --all:         also install the extensions that are not installed yet, except the OPTIONAL ones
                  (see below); --include-optional adds those too
@@ -42,7 +43,7 @@ SKIP_DIRS = {".git", "target", "node_modules", "__pycache__", ".venv"}
 # only wanted on some PCs: never installed by --all, only when named (or already installed)
 OPTIONAL = {"sculpt_brush_shelf", "rustremesher"}
 # ids that an extension used to have: removed together with the current one
-OLD_IDS = {"polyquilt_luis_fork": ["PolyQuilt_Fork"]}
+OLD_IDS = {"polyquilt_luis_fork": ["PolyQuilt_Fork"], "retopoflow_luis_fork": ["retopoflow"]}
 
 
 def vkey(version):
@@ -138,6 +139,9 @@ def run(cmd, dry):
 def state(info, ext_dir):
     old = installed_version(ext_dir, info["id"])
     if old is None:
+        for rid in OLD_IDS.get(info["id"], []):
+            if installed_version(ext_dir, rid) is not None:
+                return "update available (replaces old id %s)" % rid, installed_version(ext_dir, rid)
         return "not installed", old
     a, b = vkey(old), vkey(info["version"])
     return ("up to date" if a == b else "update available" if a < b else "installed is NEWER"), old
