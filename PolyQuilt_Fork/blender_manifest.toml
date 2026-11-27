@@ -1,13 +1,13 @@
 schema_version = "1.0.0"
 
-id = "PolyQuilt_Fork"
-version = "1.46.18"
-name = "PolyQuilt Retopology Tool"
-tagline = "Retopology Tool for Blender" 
-maintainer = "Sakana3, Dan-Gry"
+id = "polyquilt_luis_fork"
+version = "1.47.0"
+name = "PolyQuilt Luis Fork"
+tagline = "Luis Flores fork of PolyQuilt: pinned verts, backup autosave"
+maintainer = "Luis Flores (fork of Sakana3, Dan-Gry)"
 type = "add-on"
 
-website = "https://github.com/Dangry98/PolyQuilt-for-Blender-4.0"
+website = "https://github.com/DeadSkinMask/blender-addons-claude"
 
 tags = ["Modeling"]
 
