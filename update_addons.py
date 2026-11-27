@@ -10,12 +10,16 @@ and portable setups work).
 
 * no names:      update the extensions that are already installed; list the ones that are not
 * names:         only those (match on id or name, case-insensitive substring) - installed or not
-* --all:         also install the extensions that are not installed yet
+* --all:         also install the extensions that are not installed yet, except the OPTIONAL ones
+                 (see below); --include-optional adds those too
 * --list:        show the state of every extension and exit
 * --force:       install even if the version is the same or older
 * --dry-run:     only print the Blender commands
 * --blender:     blender executable (else $BLENDER_EXE, else the newest
                  "Program Files/Blender Foundation/Blender *" on Windows, else `blender` on PATH)
+
+Optional extensions (OPTIONAL below) are meant for specific PCs: --all does not install them,
+but they are updated when already installed and installed when named explicitly.
 
 Each install removes the previous one first (installing over it can leave the old code running),
 then installs into the user_default repository and enables it. Add-on preferences are kept
@@ -35,6 +39,8 @@ import zipfile
 REPO = "user_default"
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKIP_DIRS = {".git", "target", "node_modules", "__pycache__", ".venv"}
+# only wanted on some PCs: never installed by --all, only when named (or already installed)
+OPTIONAL = {"sculpt_brush_shelf", "rustremesher"}
 # ids that an extension used to have: removed together with the current one
 OLD_IDS = {"polyquilt_luis_fork": ["PolyQuilt_Fork"]}
 
@@ -141,6 +147,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("names", nargs="*")
     ap.add_argument("--all", action="store_true")
+    ap.add_argument("--include-optional", action="store_true",
+                    help="let --all install the OPTIONAL extensions too")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
@@ -163,7 +171,8 @@ def main():
     for ext_id, info in sorted(zips.items()):
         st, old = state(info, ext_dir)
         rows.append((ext_id, info, st, old))
-        print("%-26s zip %-8s installed %-9s %s" % (ext_id, info["version"], old or "-", st))
+        print("%-26s zip %-8s installed %-9s %s%s" % (ext_id, info["version"], old or "-", st,
+              "  [optional]" if ext_id in OPTIONAL else ""))
     if args.list:
         return 0
 
@@ -173,7 +182,7 @@ def main():
         if wanted:
             if not any(w in ext_id.lower() or w in (info["name"] or "").lower() for w in wanted):
                 continue
-        elif st == "not installed" and not args.all:
+        elif st == "not installed" and (not args.all or (ext_id in OPTIONAL and not args.include_optional)):
             continue
         if st in ("up to date", "installed is NEWER") and not args.force:
             continue
@@ -181,6 +190,10 @@ def main():
     missing = [w for w in wanted if not any(w in i.lower() or w in (zips[i]["name"] or "").lower() for i in zips)]
     for w in missing:
         print("\n[WARNING] no extension matches %r" % w)
+
+    skipped = [i for i, _, st, _ in rows if i in OPTIONAL and st == "not installed"]
+    if skipped and not wanted and not args.include_optional:
+        print("\nOptional, not installed (name them to install): " + ", ".join(skipped))
 
     if not chosen:
         print("\nNothing to do.%s" % ("" if wanted or args.all else
